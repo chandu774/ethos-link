@@ -306,7 +306,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <Button variant="outline" size="sm" asChild>
-                <a href="/connections">View Requests</a>
+                <a href="/requests">View Requests</a>
               </Button>
             </CardContent>
           </Card>

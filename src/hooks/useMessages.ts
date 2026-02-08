@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useMemo } from "react";
+import { toast } from "sonner";
 
 type Message = Tables<"messages">;
 type MessageReaction = Tables<"message_reactions">;
@@ -105,8 +106,9 @@ export function useSendMessage() {
       content: string;
       replyToMessageId?: string | null;
     }) => {
+      if (!user) throw new Error("Not authenticated");
       const { error } = await supabase.from("messages").insert({
-        sender_id: user!.id,
+        sender_id: user.id,
         receiver_id: receiverId,
         content,
         reply_to_message_id: replyToMessageId ?? null,
@@ -117,6 +119,9 @@ export function useSendMessage() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["messages", user?.id, variables.receiverId] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to send message");
     },
   });
 }

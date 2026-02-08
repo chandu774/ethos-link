@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,7 @@ interface ChatItem {
 
 export default function Connections() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const { user } = useAuth();
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [input, setInput] = useState("");
@@ -186,9 +187,14 @@ export default function Connections() {
     const chatId = searchParams.get("chat");
     const groupId = searchParams.get("group");
     const tabParam = searchParams.get("tab");
+    const requestsParam = searchParams.get("requests");
 
     if (tabParam === "all" || tabParam === "direct" || tabParam === "groups") {
       setActiveTab(tabParam);
+    }
+
+    if (location.pathname === "/requests" || requestsParam === "1" || requestsParam === "true") {
+      setShowRequests(true);
     }
 
     if (!chatId && !groupId) {
@@ -231,7 +237,7 @@ export default function Connections() {
         });
       }
     }
-  }, [searchParams, connections, allUserGroups, user]);
+  }, [searchParams, connections, allUserGroups, location.pathname, user]);
 
   // Build unified chat list
   const chatList: ChatItem[] = [
@@ -441,22 +447,35 @@ export default function Connections() {
     if (!trimmed || !selectedChat) return;
     
     if (selectedChat.type === "direct" && selectedChat.partnerId) {
-      sendMessage.mutate({
-        receiverId: selectedChat.partnerId,
-        content: trimmed,
-        replyToMessageId,
-      });
-      setReplyToMessageId(null);
-      sendTypingStatus(false);
+      sendMessage.mutate(
+        {
+          receiverId: selectedChat.partnerId,
+          content: trimmed,
+          replyToMessageId,
+        },
+        {
+          onSuccess: () => {
+            setReplyToMessageId(null);
+            setInput("");
+            sendTypingStatus(false);
+          },
+        }
+      );
     } else if (selectedChat.type === "group") {
-      sendGroupMessage.mutate({
-        groupId: selectedChat.id,
-        content: trimmed,
-        replyToMessageId,
-      });
-      setReplyToMessageId(null);
+      sendGroupMessage.mutate(
+        {
+          groupId: selectedChat.id,
+          content: trimmed,
+          replyToMessageId,
+        },
+        {
+          onSuccess: () => {
+            setReplyToMessageId(null);
+            setInput("");
+          },
+        }
+      );
     }
-    setInput("");
   };
 
   const handleAccept = (connectionId: string) => {
