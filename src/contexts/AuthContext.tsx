@@ -13,6 +13,9 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
+  resendVerification: (email: string) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -49,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log("Supabase auth state change:", event, session);
         setSession(session);
         setUser(session?.user ?? null);
 
@@ -81,7 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string) => {
-    const redirectUrl = `${window.location.origin}/`;
+    const redirectUrl =
+      import.meta.env.VITE_SITE_URL?.replace(/\/+$/, "") ?? window.location.origin;
 
     const { error } = await supabase.auth.signUp({
       email,
@@ -92,6 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     });
 
+    if (error) {
+      console.error("Supabase signUp error:", error);
+    }
     return { error: error as Error | null };
   };
 
@@ -111,6 +119,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
+  const resetPassword = async (email: string) => {
+    const baseUrl =
+      import.meta.env.VITE_SITE_URL?.replace(/\/+$/, "") ?? window.location.origin;
+    const redirectUrl = `${baseUrl}/auth`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+
+    if (error) {
+      console.error("Supabase resetPassword error:", error);
+    }
+
+    return { error: error as Error | null };
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      console.error("Supabase updatePassword error:", error);
+    }
+
+    return { error: error as Error | null };
+  };
+
+  const resendVerification = async (email: string) => {
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    if (error) {
+      console.error("Supabase resend verification error:", error);
+    }
+
+    return { error: error as Error | null };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -121,6 +168,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signIn,
         signOut,
+        resetPassword,
+        updatePassword,
+        resendVerification,
         refreshProfile,
       }}
     >
