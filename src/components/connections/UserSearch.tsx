@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, User, UserPlus, Loader2, X, AtSign } from "lucide-react";
-import { useProfiles, useSearchUsers } from "@/hooks/useProfiles";
+import { useSearchUsers } from "@/hooks/useProfiles";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatUsername } from "@/lib/utils";
@@ -19,7 +19,6 @@ export function UserSearch({ onClose }: UserSearchProps) {
   const debouncedQuery = useDebounce(searchQuery, 300);
   
   const { user } = useAuth();
-  const { data: profiles, isLoading: loadingProfiles } = useProfiles();
   const { data: searchResults, isLoading: isSearching } = useSearchUsers(debouncedQuery);
   const { data: connections } = useConnections();
   const { data: pendingRequests } = usePendingRequests();
@@ -47,14 +46,11 @@ export function UserSearch({ onClose }: UserSearchProps) {
 
   // Determine which results to show
   const displayedProfiles = useMemo(() => {
-    if (debouncedQuery.trim().length >= 2 && searchResults) {
-      return searchResults;
-    }
-    // Show a few suggested classmates when no search
-    return profiles?.slice(0, 10) || [];
-  }, [debouncedQuery, searchResults, profiles]);
+    if (debouncedQuery.trim().length >= 2) return searchResults || [];
+    return [];
+  }, [debouncedQuery, searchResults]);
 
-  const isLoading = loadingProfiles || (debouncedQuery.trim().length >= 2 && isSearching);
+  const isLoading = debouncedQuery.trim().length >= 2 && isSearching;
 
   const handleSendRequest = (receiverId: string) => {
     sendRequest.mutate({ receiverId });
@@ -74,7 +70,7 @@ export function UserSearch({ onClose }: UserSearchProps) {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by @username or name..."
+              placeholder="Search by @username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -197,8 +193,8 @@ export function UserSearch({ onClose }: UserSearchProps) {
               </p>
               <p className="text-sm text-muted-foreground">
                 {debouncedQuery.trim().length >= 2 
-                  ? "Try a different username or name"
-                  : "Search by @username or display name"}
+                  ? "Try a different username"
+                  : "Search by @username"}
               </p>
             </div>
           )}

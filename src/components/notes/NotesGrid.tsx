@@ -5,6 +5,9 @@ import type { NoteItem } from "@/hooks/useNotes";
 
 interface NotesGridProps {
   notes: NoteItem[];
+  currentUserId?: string;
+  deletingNoteId?: string | null;
+  onDeleteNote: (note: NoteItem) => void;
   isLoading: boolean;
   isFetchingNextPage: boolean;
   hasNextPage: boolean;
@@ -15,6 +18,9 @@ interface NotesGridProps {
 
 export function NotesGrid({
   notes,
+  currentUserId,
+  deletingNoteId,
+  onDeleteNote,
   isLoading,
   isFetchingNextPage,
   hasNextPage,
@@ -50,7 +56,13 @@ export function NotesGrid({
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {notes.map((note) => (
-          <NoteCard key={note.id} note={note} />
+          <NoteCard
+            key={note.id}
+            note={note}
+            canDelete={currentUserId === note.user_id}
+            isDeleting={deletingNoteId === note.id}
+            onDelete={onDeleteNote}
+          />
         ))}
       </div>
 

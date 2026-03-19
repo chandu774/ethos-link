@@ -184,3 +184,31 @@ export function useUploadNote() {
     },
   });
 }
+
+export function useDeleteNote() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (note: Pick<NoteItem, "id" | "user_id" | "file_url">) => {
+      if (!user) throw new Error("Please login first.");
+      if (note.user_id !== user.id) {
+        throw new Error("Only the uploader can delete this note.");
+      }
+
+      const objectPath = getStoragePathFromRef(note.file_url, "notes");
+      const { error: storageError } = await supabase.storage.from("notes").remove([objectPath]);
+      if (storageError) throw storageError;
+
+      const { error } = await supabase.from("notes").delete().eq("id", note.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      toast.success("Note deleted");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to delete note");
+    },
+  });
+}

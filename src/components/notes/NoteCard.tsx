@@ -1,6 +1,17 @@
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import type { NoteItem } from "@/hooks/useNotes";
 
 function isImage(fileRef: string) {
@@ -17,9 +28,12 @@ function getUploaderLabel(note: NoteItem) {
 
 interface NoteCardProps {
   note: NoteItem;
+  canDelete: boolean;
+  isDeleting: boolean;
+  onDelete: (note: NoteItem) => void;
 }
 
-export function NoteCard({ note }: NoteCardProps) {
+export function NoteCard({ note, canDelete, isDeleting, onDelete }: NoteCardProps) {
   return (
     <Card className="border-border/50 bg-card/85 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="space-y-2">
@@ -54,12 +68,37 @@ export function NoteCard({ note }: NoteCardProps) {
           <p className="text-xs text-muted-foreground">
             {new Date(note.created_at).toLocaleString()}
           </p>
-          <Button asChild size="sm" variant="outline" disabled={!note.download_url}>
-            <a href={note.download_url || "#"} target="_blank" rel="noreferrer">
-              <Download className="mr-1 h-4 w-4" />
-              Download
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canDelete ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="destructive" disabled={isDeleting}>
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently remove the note for everyone in the group.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onDelete(note)}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : null}
+            <Button asChild size="sm" variant="outline" disabled={!note.download_url}>
+              <a href={note.download_url || "#"} target="_blank" rel="noreferrer">
+                <Download className="mr-1 h-4 w-4" />
+                Download
+              </a>
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

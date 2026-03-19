@@ -6,10 +6,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UploadNoteModal } from "@/components/notes/UploadNoteModal";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { useDashboardGroups } from "@/hooks/useCollaborationGroups";
-import { useNotes } from "@/hooks/useNotes";
+import { useDeleteNote, useNotes, type NoteItem } from "@/hooks/useNotes";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function NotesPage() {
+  const { user } = useAuth();
   const { data: groups = [] } = useDashboardGroups();
+  const deleteNote = useDeleteNote();
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
 
   useEffect(() => {
@@ -26,6 +29,12 @@ export default function NotesPage() {
     () => notesQuery.data?.pages.flat() || [],
     [notesQuery.data?.pages]
   );
+
+  const deletingNoteId = deleteNote.isPending ? deleteNote.variables?.id || null : null;
+
+  const handleDeleteNote = (note: NoteItem) => {
+    deleteNote.mutate(note);
+  };
 
   return (
     <AppLayout>
@@ -59,6 +68,9 @@ export default function NotesPage() {
           <CardContent>
             <NotesGrid
               notes={notes}
+              currentUserId={user?.id}
+              deletingNoteId={deletingNoteId}
+              onDeleteNote={handleDeleteNote}
               isLoading={notesQuery.isLoading}
               isFetchingNextPage={notesQuery.isFetchingNextPage}
               hasNextPage={!!notesQuery.hasNextPage}
