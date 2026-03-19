@@ -11,9 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAssignments, useCreateAssignment } from "@/hooks/useAssignments";
 import { useGroupTyping, useGroupMessages, useSendGroupChatMessage } from "@/hooks/useGroupChat";
-import { useCollaborationGroupMembers, useDashboardGroups, useGroupRole } from "@/hooks/useCollaborationGroups";
+import {
+  useAddCollaborationGroupMember,
+  useCollaborationGroupMembers,
+  useDashboardGroups,
+  useGroupRole,
+} from "@/hooks/useCollaborationGroups";
 import { useCreateTask, useTasks, useUpdateTaskStatus } from "@/hooks/useTasks";
 import { useAuth } from "@/contexts/AuthContext";
+import { useConnections } from "@/hooks/useConnections";
+import { Loader2, User, UserPlus } from "lucide-react";
+import { formatUsername } from "@/lib/utils";
 
 export default function GroupDetail() {
   const { groupId = "" } = useParams();
@@ -28,6 +36,8 @@ export default function GroupDetail() {
   const createAssignment = useCreateAssignment(groupId);
   const createTask = useCreateTask(groupId);
   const updateTaskStatus = useUpdateTaskStatus(groupId);
+  const addMember = useAddCollaborationGroupMember(groupId);
+  const { data: connections = [] } = useConnections();
   const { typingUsers, sendTyping } = useGroupTyping(groupId);
   const [message, setMessage] = useState("");
   const [messageFile, setMessageFile] = useState<File | null>(null);
@@ -35,9 +45,38 @@ export default function GroupDetail() {
   const [assignmentDeadline, setAssignmentDeadline] = useState("");
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [pendingAddUserId, setPendingAddUserId] = useState<string | null>(null);
 
   const group = useMemo(() => groups?.find((item) => item.id === groupId) ?? null, [groupId, groups]);
   const canManage = role === "admin" || role === "moderator";
+  const connectionCandidates = useMemo(() => {
+    const candidateMap = new Map<string, { id: string; name: string; username: string | null }>();
+    connections.forEach((connection) => {
+      const isRequester = connection.requester_id === user?.id;
+      const partner = isRequester ? connection.receiver : connection.requester;
+      const partnerId = partner?.id || (isRequester ? connection.receiver_id : connection.requester_id);
+      if (!partnerId) return;
+      candidateMap.set(partnerId, {
+        id: partnerId,
+        name: partner?.name || "Connection",
+        username: partner?.username || null,
+      });
+    });
+    return Array.from(candidateMap.values());
+  }, [connections, user?.id]);
+
+  const memberUserIds = useMemo(() => new Set(members.map((member) => member.user_id)), [members]);
+  const availableUsers = useMemo(() => {
+    const query = memberSearch.trim().toLowerCase();
+    return connectionCandidates.filter((profile) => {
+      if (memberUserIds.has(profile.id)) return false;
+      if (!query) return true;
+      const name = (profile.name || "").toLowerCase();
+      const username = (profile.username || "").toLowerCase();
+      return name.includes(query) || username.includes(query);
+    });
+  }, [connectionCandidates, memberSearch, memberUserIds]);
 
   return (
     <AppLayout>
@@ -106,11 +145,75 @@ export default function GroupDetail() {
                   <CardTitle className="text-base">Members</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {canManage && (
+                    <div className="space-y-3 rounded-lg border border-border/60 p-3">
+                      <p className="text-sm font-medium text-foreground">Add member</p>
+                      <Input
+                        value={memberSearch}
+                        onChange={(event) => setMemberSearch(event.target.value)}
+                        placeholder="Search your connections"
+                      />
+                      <div className="space-y-2">
+                        {availableUsers.length > 0 ? (
+                          availableUsers.slice(0, 5).map((person) => (
+                            <div
+                              key={person.id}
+                              className="flex items-center justify-between rounded-md border border-border/50 p-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {person.name || "User"}
+                                </p>
+                                {person.username && (
+                                  <p className="truncate text-xs text-muted-foreground">
+                                    {formatUsername(person.username).display}
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={addMember.isPending}
+                                onClick={async () => {
+                                  setPendingAddUserId(person.id);
+                                  try {
+                                    await addMember.mutateAsync(person.id);
+                                    setMemberSearch("");
+                                  } finally {
+                                    setPendingAddUserId(null);
+                                  }
+                                }}
+                              >
+                                {addMember.isPending && pendingAddUserId === person.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <UserPlus className="mr-1 h-4 w-4" />
+                                    Add
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No connections available to add.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {members.map((member) => (
                     <div key={member.id} className="rounded-lg border border-border/60 p-3">
-                      <p className="font-medium text-foreground">
-                        {member.profile?.username || member.profile?.name || "Member"}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <p className="font-medium text-foreground">
+                          {member.profile?.name || member.profile?.username || "Member"}
+                        </p>
+                      </div>
+                      {member.profile?.username && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatUsername(member.profile.username).display}
+                        </p>
+                      )}
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">{member.role}</p>
                     </div>
                   ))}

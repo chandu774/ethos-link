@@ -167,3 +167,27 @@ export function useGroupRole(groupId: string) {
     enabled: !!groupId && !!user,
   });
 }
+
+export function useAddCollaborationGroupMember(groupId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.from("group_members").insert({
+        group_id: groupId,
+        user_id: userId,
+        role: "member",
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collaboration-group-members", groupId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-groups"] });
+      toast.success("Member added");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to add member");
+    },
+  });
+}

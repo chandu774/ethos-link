@@ -3,7 +3,7 @@ import { StatCard } from "@/components/dashboard/StatCard";
 
 interface HeroSectionProps {
   name: string;
-  assignmentsDue: number;
+  assignmentsCount: number;
   openTasks: number;
 }
 
@@ -14,7 +14,7 @@ function getGreeting() {
   return "Good Evening";
 }
 
-export function HeroSection({ name, assignmentsDue, openTasks }: HeroSectionProps) {
+export function HeroSection({ name, assignmentsCount, openTasks }: HeroSectionProps) {
   return (
     <section className="animate-in fade-in-0 slide-in-from-top-2 duration-500">
       <div className="rounded-2xl border border-border/40 bg-gradient-to-br from-card/95 via-card/90 to-background/90 p-5 shadow-sm md:p-6">
@@ -32,13 +32,13 @@ export function HeroSection({ name, assignmentsDue, openTasks }: HeroSectionProp
           <div className="grid gap-3 sm:grid-cols-2">
             <StatCard
               label="Assignments"
-              value={assignmentsDue}
-              hint="Deadlines this week"
+              value={assignmentsCount}
+              hint="Total created"
               icon={BookOpenCheck}
               tone="accent"
             />
             <StatCard
-              label="Open Tasks"
+              label="Tasks"
               value={openTasks}
               hint="Todo + in progress"
               icon={ListChecks}

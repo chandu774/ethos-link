@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, GripVertical } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { CollaborationTask } from "@/lib/collaboration";
@@ -26,6 +27,7 @@ const columns: Array<{ key: TaskStatus; title: string; tint: string }> = [
 export function TaskBoard({ tasks, assignees = {}, onStatusChange }: TaskBoardProps) {
   const [boardTasks, setBoardTasks] = useState<CollaborationTask[]>(tasks);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [activeTodoTaskId, setActiveTodoTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     setBoardTasks(tasks);
@@ -98,8 +100,13 @@ export function TaskBoard({ tasks, assignees = {}, onStatusChange }: TaskBoardPr
                       setDraggingTaskId(task.id);
                     }}
                     onDragEnd={() => setDraggingTaskId(null)}
+                    onClick={() => {
+                      if (column.key !== "todo") return;
+                      setActiveTodoTaskId((current) => (current === task.id ? null : task.id));
+                    }}
                     className={cn(
                       "rounded-xl border border-border/50 bg-card/95 p-3 shadow-sm transition-all duration-200 hover:shadow-md",
+                      column.key === "todo" ? "cursor-pointer" : "",
                       draggingTaskId === task.id ? "scale-[1.02] opacity-80" : ""
                     )}
                   >
@@ -124,6 +131,21 @@ export function TaskBoard({ tasks, assignees = {}, onStatusChange }: TaskBoardPr
                         </AvatarFallback>
                       </Avatar>
                     </div>
+                    {column.key === "todo" && activeTodoTaskId === task.id && (
+                      <div className="mt-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            moveTask(task.id, "completed");
+                            setActiveTodoTaskId(null);
+                          }}
+                        >
+                          Mark completed
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

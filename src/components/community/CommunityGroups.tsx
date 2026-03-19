@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,9 +21,12 @@ import {
   useJoinGroup, 
   useIsGroupMember 
 } from "@/hooks/useGroups";
+import { useConnections } from "@/hooks/useConnections";
+import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Users, Loader2, LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { GroupAvatar } from "@/components/ui/group-avatar";
+import { formatUsername } from "@/lib/utils";
 
 interface CommunityGroupsProps {
   communityId: string;
@@ -108,20 +112,44 @@ export function CommunityGroups({ communityId, communityName }: CommunityGroupsP
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
 
   const { data: groups, isLoading } = useCommunityGroups(communityId);
+  const { user } = useAuth();
+  const { data: connections = [] } = useConnections();
   const createGroup = useCreateGroup();
   const joinGroup = useJoinGroup();
+
+  const connectionCandidates = Array.from(
+    connections.reduce<Map<string, { id: string; name: string; username: string | null }>>((acc, connection) => {
+      const isRequester = connection.requester_id === user?.id;
+      const partner = isRequester ? connection.receiver : connection.requester;
+      const partnerId = partner?.id || (isRequester ? connection.receiver_id : connection.requester_id);
+      if (!partnerId) return acc;
+      acc.set(partnerId, {
+        id: partnerId,
+        name: partner?.name || "Connection",
+        username: partner?.username || null,
+      });
+      return acc;
+    }, new Map()).values()
+  );
 
   const handleCreateGroup = () => {
     if (!newGroupName.trim()) return;
     createGroup.mutate(
-      { name: newGroupName, description: newGroupDescription, communityId },
+      {
+        name: newGroupName,
+        description: newGroupDescription,
+        communityId,
+        initialMemberIds: selectedConnectionIds,
+      },
       {
         onSuccess: () => {
           setShowCreateDialog(false);
           setNewGroupName("");
           setNewGroupDescription("");
+          setSelectedConnectionIds([]);
         },
       }
     );
@@ -178,6 +206,42 @@ export function CommunityGroups({ communityId, communityName }: CommunityGroupsP
                   onChange={(e) => setNewGroupDescription(e.target.value)}
                   placeholder="What's this group about?"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Add from your connections</Label>
+                <div className="max-h-44 space-y-2 overflow-y-auto rounded-md border border-border/60 p-3">
+                  {connectionCandidates.length > 0 ? (
+                    connectionCandidates.map((connection) => {
+                      const checked = selectedConnectionIds.includes(connection.id);
+                      return (
+                        <label
+                          key={connection.id}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted/40"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
+                            {connection.username && (
+                              <p className="truncate text-xs text-muted-foreground">
+                                {formatUsername(connection.username).display}
+                              </p>
+                            )}
+                          </div>
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => {
+                              setSelectedConnectionIds((prev) => {
+                                if (value) return [...prev, connection.id];
+                                return prev.filter((id) => id !== connection.id);
+                              });
+                            }}
+                          />
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No accepted connections yet.</p>
+                  )}
+                </div>
               </div>
             </div>
             <DialogFooter>

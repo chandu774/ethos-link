@@ -284,10 +284,12 @@ export function useCreateGroup() {
       name,
       description,
       communityId,
+      initialMemberIds,
     }: {
       name: string;
       description?: string;
       communityId?: string | null;
+      initialMemberIds?: string[];
     }) => {
       if (!user) throw new Error("Not authenticated");
 
@@ -313,6 +315,22 @@ export function useCreateGroup() {
       });
 
       if (memberError) throw memberError;
+
+      const uniqueMemberIds = Array.from(
+        new Set((initialMemberIds || []).filter((memberId) => !!memberId && memberId !== user.id))
+      );
+
+      if (uniqueMemberIds.length > 0) {
+        const { error: invitedMembersError } = await supabase.from("group_members").insert(
+          uniqueMemberIds.map((memberId) => ({
+            group_id: group.id,
+            user_id: memberId,
+            role: "member",
+          }))
+        );
+
+        if (invitedMembersError) throw invitedMembersError;
+      }
 
       return group;
     },

@@ -46,8 +46,14 @@ export function UserSearch({ onClose }: UserSearchProps) {
 
   // Determine which results to show
   const displayedProfiles = useMemo(() => {
-    if (debouncedQuery.trim().length >= 2) return searchResults || [];
-    return [];
+    const query = debouncedQuery.trim().toLowerCase();
+    if (query.length < 2) return [];
+
+    return (searchResults || []).filter((profile) => {
+      const name = (profile.name || "").toLowerCase();
+      const username = (profile.username || "").toLowerCase();
+      return name.includes(query) || username.includes(query);
+    });
   }, [debouncedQuery, searchResults]);
 
   const isLoading = debouncedQuery.trim().length >= 2 && isSearching;
@@ -70,7 +76,7 @@ export function UserSearch({ onClose }: UserSearchProps) {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by @username..."
+              placeholder="Search by name or @username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -193,8 +199,8 @@ export function UserSearch({ onClose }: UserSearchProps) {
               </p>
               <p className="text-sm text-muted-foreground">
                 {debouncedQuery.trim().length >= 2 
-                  ? "Try a different username"
-                  : "Search by @username"}
+                  ? "Try a different name or username"
+                  : "Search by name or @username"}
               </p>
             </div>
           )}

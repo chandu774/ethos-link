@@ -8,12 +8,14 @@ export function useTasks(groupId: string | null, assignedTo?: string | null) {
   return useQuery({
     queryKey: ["tasks", groupId, assignedTo],
     queryFn: async () => {
-      if (!groupId) return [] as CollaborationTask[];
       let query = supabase
         .from("tasks")
         .select("*")
-        .eq("group_id", groupId)
         .order("deadline", { ascending: true, nullsFirst: false });
+
+      if (groupId) {
+        query = query.eq("group_id", groupId);
+      }
 
       if (assignedTo) {
         query = query.eq("assigned_to", assignedTo);
@@ -23,7 +25,7 @@ export function useTasks(groupId: string | null, assignedTo?: string | null) {
       if (error) throw error;
       return data as CollaborationTask[];
     },
-    enabled: !!groupId,
+    enabled: true,
   });
 }
 
@@ -62,7 +64,7 @@ export function useCreateTask(groupId: string) {
       return data as CollaborationTask;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", groupId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast.success("Task created");
     },
@@ -72,7 +74,7 @@ export function useCreateTask(groupId: string) {
   });
 }
 
-export function useUpdateTaskStatus(groupId: string) {
+export function useUpdateTaskStatus(groupId?: string | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -90,7 +92,10 @@ export function useUpdateTaskStatus(groupId: string) {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", groupId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (groupId) {
+        queryClient.invalidateQueries({ queryKey: ["tasks", groupId] });
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to update task");

@@ -66,12 +66,12 @@ export function useSearchUsers(searchQuery: string) {
 
       const query = searchQuery.toLowerCase().trim();
       
-      // Search by username only (case-insensitive) - partial matches
+      // Search by username or name (case-insensitive) - partial matches
       const { data, error } = await supabase
         .from("profiles_public")
         .select("*")
         .neq("id", user?.id ?? "")
-        .ilike("username", `%${query}%`)
+        .or(`username.ilike.%${query}%,name.ilike.%${query}%`)
         .limit(20);
 
       if (error) throw error;

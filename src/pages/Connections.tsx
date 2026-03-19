@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -41,6 +42,7 @@ import {
   useGroupDetails,
   useUpdateGroup,
   useIsGroupAdmin,
+  useAddGroupMember,
   useGroupMessageReactions,
   useToggleGroupMessageReaction
 } from "@/hooks/useGroups";
@@ -91,6 +93,7 @@ export default function Connections() {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "direct" | "groups">("all");
   const [groupViewTab, setGroupViewTab] = useState<"chat" | "files" | "announcements" | "deadlines">("chat");
   const [showUserSearch, setShowUserSearch] = useState(false);
@@ -100,6 +103,8 @@ export default function Connections() {
   const [isUploadingGroupAvatar, setIsUploadingGroupAvatar] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [showMemberProfile, setShowMemberProfile] = useState(false);
+  const [groupMemberSearch, setGroupMemberSearch] = useState("");
+  const [pendingInviteUserId, setPendingInviteUserId] = useState<string | null>(null);
   const [replyToMessageId, setReplyToMessageId] = useState<string | null>(null);
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
@@ -180,8 +185,45 @@ export default function Connections() {
   const toggleGroupMessageReaction = useToggleGroupMessageReaction();
   const respondToRequest = useRespondToRequest();
   const createGroup = useCreateGroup();
+  const addGroupMember = useAddGroupMember();
   const leaveGroup = useLeaveGroup();
   const updateGroup = useUpdateGroup();
+
+  const connectionCandidates = useMemo(() => {
+    const candidateMap = new Map<
+      string,
+      { id: string; name: string; username: string | null; avatar_url: string | null }
+    >();
+    (connections || []).forEach((connection) => {
+      const isRequester = connection.requester_id === user?.id;
+      const partner = isRequester ? connection.receiver : connection.requester;
+      const partnerId = partner?.id || (isRequester ? connection.receiver_id : connection.requester_id);
+      if (!partnerId) return;
+      candidateMap.set(partnerId, {
+        id: partnerId,
+        name: partner?.name || "Connection",
+        username: partner?.username || null,
+        avatar_url: partner?.avatar_url || null,
+      });
+    });
+    return Array.from(candidateMap.values());
+  }, [connections, user?.id]);
+
+  const existingGroupMemberIds = useMemo(
+    () => new Set((groupMembers || []).map((member) => member.user_id)),
+    [groupMembers]
+  );
+
+  const availableConnectionMembersForGroup = useMemo(() => {
+    const query = groupMemberSearch.trim().toLowerCase();
+    return connectionCandidates.filter((person) => {
+      if (existingGroupMemberIds.has(person.id)) return false;
+      if (!query) return true;
+      const name = (person.name || "").toLowerCase();
+      const username = (person.username || "").toLowerCase();
+      return name.includes(query) || username.includes(query);
+    });
+  }, [connectionCandidates, existingGroupMemberIds, groupMemberSearch]);
 
   // Handle chat and group query params
   useEffect(() => {
@@ -491,12 +533,18 @@ export default function Connections() {
   const handleCreateGroup = () => {
     if (!newGroupName.trim()) return;
     createGroup.mutate(
-      { name: newGroupName, description: newGroupDescription, communityId: null },
+      {
+        name: newGroupName,
+        description: newGroupDescription,
+        communityId: null,
+        initialMemberIds: selectedConnectionIds,
+      },
       {
         onSuccess: () => {
           setShowCreateGroup(false);
           setNewGroupName("");
           setNewGroupDescription("");
+          setSelectedConnectionIds([]);
         },
       }
     );
@@ -648,6 +696,42 @@ export default function Connections() {
                       onChange={(e) => setNewGroupDescription(e.target.value)}
                       placeholder="Add a short description for your class group"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Add from your connections</Label>
+                    <div className="max-h-44 space-y-2 overflow-y-auto rounded-md border border-border/60 p-3">
+                      {connectionCandidates.length > 0 ? (
+                        connectionCandidates.map((connection) => {
+                          const checked = selectedConnectionIds.includes(connection.id);
+                          return (
+                            <label
+                              key={connection.id}
+                              className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted/40"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
+                                {connection.username && (
+                                  <p className="truncate text-xs text-muted-foreground">
+                                    {formatUsername(connection.username).display}
+                                  </p>
+                                )}
+                              </div>
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(value) => {
+                                  setSelectedConnectionIds((prev) => {
+                                    if (value) return [...prev, connection.id];
+                                    return prev.filter((id) => id !== connection.id);
+                                  });
+                                }}
+                              />
+                            </label>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No accepted connections yet.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>
@@ -1073,6 +1157,61 @@ export default function Connections() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
+                          {isGroupAdmin && (
+                            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                Add from connections
+                              </p>
+                              <Input
+                                value={groupMemberSearch}
+                                onChange={(event) => setGroupMemberSearch(event.target.value)}
+                                placeholder="Search your connections"
+                              />
+                              <div className="max-h-40 space-y-2 overflow-y-auto">
+                                {availableConnectionMembersForGroup.length > 0 ? (
+                                  availableConnectionMembersForGroup.slice(0, 8).map((person) => (
+                                    <div
+                                      key={person.id}
+                                      className="flex items-center justify-between gap-2 rounded-md border border-border/50 px-2 py-2"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-foreground">{person.name}</p>
+                                        {person.username && (
+                                          <p className="truncate text-xs text-muted-foreground">
+                                            {formatUsername(person.username).display}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={addGroupMember.isPending}
+                                        onClick={async () => {
+                                          setPendingInviteUserId(person.id);
+                                          try {
+                                            await addGroupMember.mutateAsync({
+                                              groupId: selectedChat.id,
+                                              userId: person.id,
+                                            });
+                                          } finally {
+                                            setPendingInviteUserId(null);
+                                          }
+                                        }}
+                                      >
+                                        {addGroupMember.isPending && pendingInviteUserId === person.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          "Add"
+                                        )}
+                                      </Button>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">No connections available to add.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="max-h-[280px] space-y-2 overflow-y-auto pr-2">
                             {groupMembers && groupMembers.length > 0 ? (
                               groupMembers.map((member) => {

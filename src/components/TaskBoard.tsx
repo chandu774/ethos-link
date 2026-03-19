@@ -2,9 +2,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CollaborationTask } from "@/lib/collaboration";
 
-const columns: Array<{ key: CollaborationTask["status"]; label: string }> = [
+type TaskBoardStatus = "todo" | "completed";
+
+const columns: Array<{ key: TaskBoardStatus; label: string }> = [
   { key: "todo", label: "Todo" },
-  { key: "in_progress", label: "In Progress" },
   { key: "completed", label: "Completed" },
 ];
 
@@ -13,17 +14,24 @@ export function TaskBoard({
   onStatusChange,
 }: {
   tasks: CollaborationTask[];
-  onStatusChange?: (taskId: string, status: CollaborationTask["status"]) => void;
+  onStatusChange?: (taskId: string, status: TaskBoardStatus) => void;
 }) {
+  const matchesColumn = (task: CollaborationTask, column: TaskBoardStatus) => {
+    if (column === "todo") {
+      return task.status === "todo" || task.status === "in_progress";
+    }
+    return task.status === "completed";
+  };
+
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-2">
       {columns.map((column) => (
         <Card key={column.key} className="border-border/60 bg-card/85">
           <CardHeader>
             <CardTitle className="text-base">{column.label}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {tasks.filter((task) => task.status === column.key).map((task) => (
+            {tasks.filter((task) => matchesColumn(task, column.key)).map((task) => (
               <div key={task.id} className="rounded-xl border border-border/60 bg-background/40 p-3">
                 <p className="font-medium text-foreground">{task.title}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -39,16 +47,14 @@ export function TaskBoard({
                     size="sm"
                     variant="ghost"
                     className="mt-3 px-0 text-primary"
-                    onClick={() =>
-                      onStatusChange(task.id, column.key === "todo" ? "in_progress" : "completed")
-                    }
+                    onClick={() => onStatusChange(task.id, "completed")}
                   >
-                    Move forward
+                    Mark completed
                   </Button>
                 )}
               </div>
             ))}
-            {!tasks.some((task) => task.status === column.key) && (
+            {!tasks.some((task) => matchesColumn(task, column.key)) && (
               <p className="text-sm text-muted-foreground">No tasks here yet.</p>
             )}
           </CardContent>
