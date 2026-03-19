@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, User, UserPlus, Loader2, X, AtSign } from "lucide-react";
-import { useProfileWithSimilarity, useSearchUsers } from "@/hooks/useProfiles";
+import { useProfiles, useSearchUsers } from "@/hooks/useProfiles";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatUsername } from "@/lib/utils";
@@ -18,8 +18,8 @@ export function UserSearch({ onClose }: UserSearchProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebounce(searchQuery, 300);
   
-  const { user, profile } = useAuth();
-  const { data: profiles, isLoading: loadingProfiles } = useProfileWithSimilarity();
+  const { user } = useAuth();
+  const { data: profiles, isLoading: loadingProfiles } = useProfiles();
   const { data: searchResults, isLoading: isSearching } = useSearchUsers(debouncedQuery);
   const { data: connections } = useConnections();
   const { data: pendingRequests } = usePendingRequests();
@@ -50,17 +50,14 @@ export function UserSearch({ onClose }: UserSearchProps) {
     if (debouncedQuery.trim().length >= 2 && searchResults) {
       return searchResults;
     }
-    // Show top matches by similarity when no search
+    // Show a few suggested classmates when no search
     return profiles?.slice(0, 10) || [];
   }, [debouncedQuery, searchResults, profiles]);
 
   const isLoading = loadingProfiles || (debouncedQuery.trim().length >= 2 && isSearching);
 
   const handleSendRequest = (receiverId: string) => {
-    sendRequest.mutate({ 
-      receiverId, 
-      communityId: profile?.mode === "personal" ? profile?.joined_communities?.[0] || undefined : undefined 
-    });
+    sendRequest.mutate({ receiverId });
   };
 
   const getConnectionStatus = (profileId: string): "connected" | "pending" | "none" => {
@@ -115,8 +112,6 @@ export function UserSearch({ onClose }: UserSearchProps) {
           ) : displayedProfiles.length > 0 ? (
             displayedProfiles.map((p) => {
               const status = getConnectionStatus(p.id);
-              const similarity = 'similarity' in p ? (p as any).similarity : null;
-              
               return (
                 <div
                   key={p.id}
@@ -133,11 +128,9 @@ export function UserSearch({ onClose }: UserSearchProps) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">{p.name}</span>
-                        {similarity !== null && (
-                          <Badge variant="secondary" className="text-xs shrink-0">
-                            {similarity}% match
-                          </Badge>
-                        )}
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          Classmate
+                        </Badge>
                       </div>
                       {p.username && (
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">

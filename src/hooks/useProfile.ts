@@ -11,7 +11,6 @@ export function useUpdateProfile() {
   return useMutation({
     mutationFn: async (updates: {
       name?: string;
-      mode?: "professional" | "personal";
       interests?: string[];
       joined_communities?: string[];
       bio?: string | null;

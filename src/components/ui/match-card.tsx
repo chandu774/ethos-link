@@ -39,7 +39,7 @@ export function MatchCard({
   const navigate = useNavigate();
 
   const handleChat = () => {
-    navigate(`/connections?chat=${userId}`);
+    navigate(`/chat?chat=${userId}`);
   };
 
   const renderActionButton = () => {

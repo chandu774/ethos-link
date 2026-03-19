@@ -248,7 +248,7 @@ export default function Auth() {
           </div>
           <h1 className="mt-4 text-3xl font-bold text-gradient-neural">Synapse</h1>
           <p className="mt-2 text-muted-foreground">
-            Connect through mindset, not profiles
+            College communication and collaboration
           </p>
         </div>
 

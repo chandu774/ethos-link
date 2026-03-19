@@ -5,11 +5,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 type Connection = Tables<"connections">;
-type Profile = Tables<"profiles">;
+type PublicProfile = Tables<"profiles_public">;
 
 interface ConnectionWithProfile extends Connection {
-  requester: Profile;
-  receiver: Profile;
+  requester: PublicProfile | null;
+  receiver: PublicProfile | null;
 }
 
 export function useConnections() {
@@ -18,19 +18,32 @@ export function useConnections() {
   return useQuery({
     queryKey: ["connections", user?.id],
     queryFn: async () => {
-      // For accepted connections, we can access full profiles via RLS
       const { data, error } = await supabase
         .from("connections")
-        .select(`
-          *,
-          requester:profiles!connections_requester_id_fkey(*),
-          receiver:profiles!connections_receiver_id_fkey(*)
-        `)
+        .select("*")
         .or(`requester_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
         .eq("status", "accepted");
 
       if (error) throw error;
-      return data as ConnectionWithProfile[];
+      const connections = data as Connection[];
+      if (connections.length === 0) return [] as ConnectionWithProfile[];
+
+      const profileIds = Array.from(
+        new Set(connections.flatMap((c) => [c.requester_id, c.receiver_id]))
+      );
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles_public")
+        .select("id, name, username, avatar_url")
+        .in("id", profileIds);
+
+      if (profilesError) throw profilesError;
+
+      const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+      return connections.map((connection) => ({
+        ...connection,
+        requester: profileMap.get(connection.requester_id) || null,
+        receiver: profileMap.get(connection.receiver_id) || null,
+      })) as ConnectionWithProfile[];
     },
     enabled: !!user,
   });
@@ -97,16 +110,28 @@ export function usePendingRequests() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("connections")
-        .select(`
-          *,
-          requester:profiles!connections_requester_id_fkey(*),
-          receiver:profiles!connections_receiver_id_fkey(*)
-        `)
+        .select("*")
         .eq("receiver_id", user?.id)
         .eq("status", "pending");
 
       if (error) throw error;
-      return data as ConnectionWithProfile[];
+      const pending = data as Connection[];
+      if (pending.length === 0) return [] as ConnectionWithProfile[];
+
+      const requesterIds = Array.from(new Set(pending.map((request) => request.requester_id)));
+      const { data: requesters, error: requestersError } = await supabase
+        .from("profiles_public")
+        .select("id, name, username, avatar_url")
+        .in("id", requesterIds);
+
+      if (requestersError) throw requestersError;
+
+      const requesterMap = new Map((requesters || []).map((profile) => [profile.id, profile]));
+      return pending.map((request) => ({
+        ...request,
+        requester: requesterMap.get(request.requester_id) || null,
+        receiver: null,
+      })) as ConnectionWithProfile[];
     },
     enabled: !!user,
   });

@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -13,10 +13,13 @@ const Auth = lazy(() => import("./pages/Auth"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const CreateUsername = lazy(() => import("./pages/CreateUsername"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Assignments = lazy(() => import("./pages/Assignments"));
+const NotesPage = lazy(() => import("./pages/NotesPage"));
+const AssignmentDetail = lazy(() => import("./pages/AssignmentDetail"));
 const Profile = lazy(() => import("./pages/Profile"));
 const PublicProfile = lazy(() => import("./pages/PublicProfile"));
+const Chat = lazy(() => import("./pages/Chat"));
 const AIChat = lazy(() => import("./pages/AIChat"));
-const Connections = lazy(() => import("./pages/Connections"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -64,6 +67,46 @@ const App = () => (
                 }
               />
               <Route
+                path="/groups"
+                element={
+                  <ProtectedRoute>
+                    <Navigate to="/dashboard" replace />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/groups/:groupId"
+                element={
+                  <ProtectedRoute>
+                    <Navigate to="/dashboard" replace />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/assignments"
+                element={
+                  <ProtectedRoute>
+                    <Assignments />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/notes"
+                element={
+                  <ProtectedRoute>
+                    <NotesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/assignments/:assignmentId"
+                element={
+                  <ProtectedRoute>
+                    <AssignmentDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/profile"
                 element={
                   <ProtectedRoute>
@@ -80,6 +123,14 @@ const App = () => (
                 }
               />
               <Route
+                path="/chat"
+                element={
+                  <ProtectedRoute>
+                    <Chat />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/ai-chat"
                 element={
                   <ProtectedRoute>
@@ -91,7 +142,7 @@ const App = () => (
                 path="/connections"
                 element={
                   <ProtectedRoute>
-                    <Connections />
+                    <Chat />
                   </ProtectedRoute>
                 }
               />
@@ -99,7 +150,7 @@ const App = () => (
                 path="/requests"
                 element={
                   <ProtectedRoute>
-                    <Connections />
+                    <Navigate to="/chat?requests=1" replace />
                   </ProtectedRoute>
                 }
               />

@@ -105,10 +105,10 @@ export function useUserGroups(communityId?: string | null) {
         .in("id", groupIds);
 
       if (communityId === null) {
-        // Professional mode - groups with no community
+        // Shared groups with no community
         query = query.is("community_id", null);
       } else if (communityId) {
-        // Personal mode - specific community
+        // Community-specific groups
         query = query.eq("community_id", communityId);
       }
 

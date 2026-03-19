@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,8 @@ import {
   Search,
   AtSign,
   LogOut,
-  Reply
+  Reply,
+  Sparkles
 } from "lucide-react";
 import { UserSearch } from "@/components/connections/UserSearch";
 import { cn, formatUsername } from "@/lib/utils";
@@ -81,9 +82,10 @@ interface ChatItem {
   memberCount?: number;
 }
 
-export default function Connections() {
+export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [input, setInput] = useState("");
@@ -606,6 +608,14 @@ export default function Connections() {
           </div>
           
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/ai-chat")}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              AI Chat
+            </Button>
+
             {/* Search Users Button */}
             <Button
               variant={showUserSearch ? "default" : "outline"}
@@ -1183,7 +1193,7 @@ export default function Connections() {
                     </div>
                   ) : (
                     <>
-                  {/* Messages */}
+                      {/* Messages */}
                   <div
                     ref={messagesScrollRef}
                     className="h-[350px] space-y-4 overflow-y-auto overflow-x-visible p-4 pt-[calc(1rem+env(safe-area-inset-top))]"
@@ -1459,6 +1469,7 @@ export default function Connections() {
           </Card>
         </div>
       </div>
+
     </AppLayout>
   );
 }

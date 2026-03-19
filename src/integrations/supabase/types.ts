@@ -56,6 +56,113 @@ export type Database = {
           },
         ]
       }
+      assignments: {
+        Row: {
+          attachment_name: string | null
+          attachment_url: string | null
+          created_at: string
+          created_by: string
+          deadline: string
+          description: string | null
+          group_id: string
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          attachment_name?: string | null
+          attachment_url?: string | null
+          created_at?: string
+          created_by: string
+          deadline: string
+          description?: string | null
+          group_id: string
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          attachment_name?: string | null
+          attachment_url?: string | null
+          created_at?: string
+          created_by?: string
+          deadline?: string
+          description?: string | null
+          group_id?: string
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignments_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assignment_messages: {
+        Row: {
+          assignment_id: string
+          created_at: string
+          id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          assignment_id: string
+          created_at?: string
+          id?: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string
+          created_at?: string
+          id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_messages_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connections: {
         Row: {
           community_id: string | null
@@ -256,26 +363,35 @@ export type Database = {
         Row: {
           content: string
           created_at: string
+          file_url: string | null
           group_id: string
           id: string
+          metadata: Json
           reply_to_message_id: string | null
           sender_id: string
+          type: string
         }
         Insert: {
           content: string
           created_at?: string
+          file_url?: string | null
           group_id: string
           id?: string
+          metadata?: Json
           reply_to_message_id?: string | null
           sender_id: string
+          type?: string
         }
         Update: {
           content?: string
           created_at?: string
+          file_url?: string | null
           group_id?: string
           id?: string
+          metadata?: Json
           reply_to_message_id?: string | null
           sender_id?: string
+          type?: string
         }
         Relationships: [
           {
@@ -362,6 +478,8 @@ export type Database = {
           creator_id: string
           description: string | null
           id: string
+          invite_code: string
+          is_private: boolean
           name: string
           updated_at: string
         }
@@ -372,6 +490,8 @@ export type Database = {
           creator_id: string
           description?: string | null
           id?: string
+          invite_code?: string
+          is_private?: boolean
           name: string
           updated_at?: string
         }
@@ -382,6 +502,8 @@ export type Database = {
           creator_id?: string
           description?: string | null
           id?: string
+          invite_code?: string
+          is_private?: boolean
           name?: string
           updated_at?: string
         }
@@ -577,6 +699,318 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          assignment_id: string | null
+          content: string
+          created_at: string
+          group_id: string | null
+          id: string
+          is_read: boolean
+          metadata: Json
+          task_id: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          assignment_id?: string | null
+          content: string
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_read?: boolean
+          metadata?: Json
+          task_id?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string | null
+          content?: string
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_read?: boolean
+          metadata?: Json
+          task_id?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      note_likes: {
+        Row: {
+          created_at: string
+          id: string
+          note_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_likes_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notes: {
+        Row: {
+          created_at: string
+          description: string | null
+          file_url: string
+          group_id: string
+          id: string
+          likes_count: number
+          subject: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          file_url: string
+          group_id: string
+          id?: string
+          likes_count?: number
+          subject: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          file_url?: string
+          group_id?: string
+          id?: string
+          likes_count?: number
+          subject?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notes_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      submissions: {
+        Row: {
+          assignment_id: string
+          comment: string | null
+          created_at: string
+          file_name: string | null
+          file_url: string | null
+          id: string
+          status: string
+          submitted_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assignment_id: string
+          comment?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string
+          comment?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submissions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          created_by: string
+          deadline: string | null
+          description: string | null
+          group_id: string
+          id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          created_by: string
+          deadline?: string | null
+          description?: string | null
+          group_id: string
+          id?: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          created_by?: string
+          deadline?: string | null
+          description?: string | null
+          group_id?: string
+          id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       profiles_public: {
@@ -627,6 +1061,36 @@ export type Database = {
       calculate_similarity: {
         Args: { traits1: Json; traits2: Json }
         Returns: number
+      }
+      create_notification_for_group_members: {
+        Args: {
+          actor_user_id: string
+          linked_assignment_id?: string
+          linked_task_id?: string
+          meta?: Json
+          notification_content: string
+          notification_type: string
+          target_group_id: string
+        }
+        Returns: undefined
+      }
+      group_member_role: {
+        Args: { target_group_id: string }
+        Returns: string
+      }
+      is_group_member: {
+        Args: { target_group_id: string }
+        Returns: boolean
+      }
+      join_group_with_invite: {
+        Args: { target_invite_code: string }
+        Returns: {
+          group_id: string
+          id: string
+          joined_at: string
+          role: string
+          user_id: string
+        }
       }
     }
     Enums: {

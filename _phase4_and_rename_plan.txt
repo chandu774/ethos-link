@@ -1,0 +1,26 @@
+=== UPDATE: src/pages/Connections.tsx ===
+1) Rename file to Chat.tsx and component to Chat.
+2) Update App.tsx lazy import to use ./pages/Chat.
+3) Update route /chat element to Chat.
+4) Keep /connections route as alias to Chat.
+5) Update any references to Connections page if they exist.
+
+=== UPDATE: src/pages/Onboarding.tsx ===
+Replace mindset quiz with college setup fields:
+- School
+- Department
+- Major
+- Grad year
+- Optional bio
+Provide a simple form and save via existing profile update logic (useUpdateProfile hook).
+No new schema in this phase; we’ll store these fields later.
+For now, place fields but do not persist if profile fields don’t exist yet (or store in bio for placeholder).
+
+=== UPDATE: src/data/mindsetQuestions.ts ===
+Do not delete yet, just remove imports/usage.
+
+=== UPDATE: src/hooks/useProfiles.ts ===
+Remove or comment out useProfileWithSimilarity and any mindset related matching.
+
+=== UPDATE: src/pages/Dashboard.tsx and src/pages/Groups.tsx ===
+Remove any references to mindset matching or "trust" language (if still present).

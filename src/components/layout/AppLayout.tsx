@@ -1,12 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
-import { Brain, Home, User, MessageCircle, Users } from "lucide-react";
+import { Brain, ClipboardList, Home, NotebookTabs, User, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/dashboard", label: "Home", icon: Home },
+  { to: "/dashboard", label: "Dashboard", icon: Home },
+  { to: "/assignments", label: "Assignments", icon: ClipboardList },
+  { to: "/notes", label: "Notes", icon: NotebookTabs },
+  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/profile", label: "Profile", icon: User },
-  { to: "/ai-chat", label: "AI Chat", icon: MessageCircle },
-  { to: "/connections", label: "Connections", icon: Users },
 ];
 
 interface AppLayoutProps {
@@ -32,7 +33,10 @@ export function AppLayout({ children }: AppLayoutProps) {
           <nav className="flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.to;
+              const isActive =
+                location.pathname === item.to ||
+                (item.to === "/chat" &&
+                  (location.pathname === "/connections" || location.pathname === "/requests"));
               
               return (
                 <Link

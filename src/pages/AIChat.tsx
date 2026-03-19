@@ -16,6 +16,7 @@ import { useAIConversations, useCurrentConversation, Message } from "@/hooks/use
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
+// Deprecated: AI tools are now embedded in class groups (Chat page).
 export default function AIChat() {
   const { user, profile, refreshProfile } = useAuth();
   const queryClient = useQueryClient();

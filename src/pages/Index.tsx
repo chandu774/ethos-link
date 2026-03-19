@@ -41,23 +41,23 @@ export default function Index() {
         <div className="mx-auto max-w-3xl">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm text-primary">
             <Sparkles className="h-4 w-4" />
-            <span>Behavior-Based Matching</span>
+            <span>Built for College Life</span>
           </div>
-          
+
           <h1 className="text-4xl font-bold leading-tight text-foreground sm:text-5xl lg:text-6xl">
-            Connect Through{" "}
-            <span className="text-gradient-neural">Mindset, Not Profiles</span>
+            College Communication,{" "}
+            <span className="text-gradient-neural">Simplified</span>
           </h1>
-          
+
           <p className="mt-6 text-lg text-muted-foreground sm:text-xl">
-            Synapse matches you based on how you think, not what you say.
-            Discover meaningful connections through behavioral analysis and mindset alignment.
+            Synapse keeps your classes organized with group chat, announcements, and deadlines.
+            Stay on top of notes, updates, and study conversations in one place.
           </p>
-          
+
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link to="/auth">
               <Button size="lg" className="gradient-neural text-primary-foreground hover:opacity-90">
-                Start Connecting
+                Get Started
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
@@ -75,9 +75,9 @@ export default function Index() {
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl gradient-neural">
               <Brain className="h-6 w-6 text-primary-foreground" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-foreground">AI-Powered Analysis</h3>
+            <h3 className="mb-2 text-lg font-semibold text-foreground">Study AI Tools</h3>
             <p className="text-muted-foreground">
-              Our AI understands your thinking patterns through natural conversations, creating a unique behavioral fingerprint.
+              Summarize notes, explain concepts, and generate quick answers right inside your groups.
             </p>
           </div>
 
@@ -85,9 +85,9 @@ export default function Index() {
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl gradient-trust">
               <Shield className="h-6 w-6 text-primary-foreground" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-foreground">Trust Scoring</h3>
+            <h3 className="mb-2 text-lg font-semibold text-foreground">Announcements</h3>
             <p className="text-muted-foreground">
-              Every user has a trust score based on conversation consistency and engagement quality, ensuring authentic connections.
+              Keep exams, assignments, and class updates pinned and easy to find.
             </p>
           </div>
 
@@ -95,9 +95,9 @@ export default function Index() {
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl gradient-hero">
               <Users className="h-6 w-6 text-primary-foreground" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-foreground">Mindset Matching</h3>
+            <h3 className="mb-2 text-lg font-semibold text-foreground">Class Groups</h3>
             <p className="text-muted-foreground">
-              Connect with people who share your curiosity, depth, and approach to solving problems.
+              Join or create class groups to share notes, ask questions, and chat in real time.
             </p>
           </div>
         </div>
@@ -106,9 +106,9 @@ export default function Index() {
       {/* CTA Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="mx-auto max-w-3xl rounded-3xl gradient-hero p-12 text-center text-primary-foreground shadow-glow">
-          <h2 className="text-3xl font-bold">Ready to Find Your Mind Match?</h2>
+          <h2 className="text-3xl font-bold">Ready for a Smarter Class Hub?</h2>
           <p className="mt-4 text-lg opacity-90">
-            Join Synapse and discover connections that go beyond the surface.
+            Join Synapse and manage your classes with less clutter.
           </p>
           <Link to="/auth">
             <Button size="lg" variant="secondary" className="mt-8">
@@ -129,7 +129,7 @@ export default function Index() {
             <span className="font-medium text-foreground">Synapse</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            © 2024 Synapse. Connect through mindset, not profiles.
+            (c) 2024 Synapse. Built for students.
           </p>
         </div>
       </footer>
