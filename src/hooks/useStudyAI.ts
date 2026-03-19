@@ -25,7 +25,7 @@ export function useStudyAI() {
 
   const runStudyAI = useCallback(async ({ task, input, onChunk }: RunStudyAIOptions) => {
     if (!input.trim()) {
-      toast.error("Please add some notes or a question first.");
+      toast.error("Please add some notes first.");
       return "";
     }
 

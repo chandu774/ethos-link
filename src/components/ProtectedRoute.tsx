@@ -28,10 +28,5 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/create-username" replace />;
   }
 
-  // Redirect to onboarding if not completed (but not if already on onboarding page)
-  if (profile && !profile.onboarding_completed && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
-  }
-
   return <>{children}</>;
 }

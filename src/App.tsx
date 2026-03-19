@@ -10,7 +10,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 // Lazy load pages for code splitting - reduces initial bundle size
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
 const CreateUsername = lazy(() => import("./pages/CreateUsername"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Assignments = lazy(() => import("./pages/Assignments"));
@@ -42,14 +41,6 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
-              <Route
-                path="/onboarding"
-                element={
-                  <ProtectedRoute>
-                    <Onboarding />
-                  </ProtectedRoute>
-                }
-              />
               <Route
                 path="/create-username"
                 element={

@@ -97,7 +97,7 @@ export default function Index() {
             </div>
             <h3 className="mb-2 text-lg font-semibold text-foreground">Class Groups</h3>
             <p className="text-muted-foreground">
-              Join or create class groups to share notes, ask questions, and chat in real time.
+              Join or create class groups to share notes and chat in real time.
             </p>
           </div>
         </div>

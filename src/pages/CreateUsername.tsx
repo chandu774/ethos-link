@@ -26,11 +26,7 @@ export default function CreateUsername() {
     if (!usernameCheck?.available) return;
     updateUsername.mutate(username.trim(), {
       onSuccess: () => {
-        if (profile?.onboarding_completed) {
-          navigate("/dashboard");
-        } else {
-          navigate("/onboarding");
-        }
+        navigate("/dashboard");
       },
     });
   };

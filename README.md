@@ -35,7 +35,7 @@ It is designed to feel familiar like WhatsApp/Discord, while introducing smarter
 
 ### 🧠 AI Features
 - AI-powered message summaries
-- Ask AI questions inside communities
+- Ask AI inside communities
 - AI highlights important discussions
 - AI messages visually separated from user chat
 
