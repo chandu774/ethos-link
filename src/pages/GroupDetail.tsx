@@ -16,11 +16,12 @@ import {
   useCollaborationGroupMembers,
   useDashboardGroups,
   useGroupRole,
+  useRemoveCollaborationGroupMember,
 } from "@/hooks/useCollaborationGroups";
 import { useCreateTask, useTasks, useUpdateTaskStatus } from "@/hooks/useTasks";
 import { useAuth } from "@/contexts/AuthContext";
 import { useConnections } from "@/hooks/useConnections";
-import { Loader2, User, UserPlus } from "lucide-react";
+import { Loader2, User, UserMinus, UserPlus } from "lucide-react";
 import { formatUsername } from "@/lib/utils";
 
 export default function GroupDetail() {
@@ -37,6 +38,7 @@ export default function GroupDetail() {
   const createTask = useCreateTask(groupId);
   const updateTaskStatus = useUpdateTaskStatus(groupId);
   const addMember = useAddCollaborationGroupMember(groupId);
+  const removeMember = useRemoveCollaborationGroupMember(groupId);
   const { data: connections = [] } = useConnections();
   const { typingUsers, sendTyping } = useGroupTyping(groupId);
   const [message, setMessage] = useState("");
@@ -47,6 +49,7 @@ export default function GroupDetail() {
   const [taskTitle, setTaskTitle] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [pendingAddUserId, setPendingAddUserId] = useState<string | null>(null);
+  const [pendingRemoveUserId, setPendingRemoveUserId] = useState<string | null>(null);
 
   const group = useMemo(() => groups?.find((item) => item.id === groupId) ?? null, [groupId, groups]);
   const canManage = role === "admin" || role === "moderator";
@@ -203,18 +206,47 @@ export default function GroupDetail() {
                   )}
                   {members.map((member) => (
                     <div key={member.id} className="rounded-lg border border-border/60 p-3">
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <p className="font-medium text-foreground">
-                          {member.profile?.name || member.profile?.username || "Member"}
-                        </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <p className="truncate font-medium text-foreground">
+                              {member.profile?.name || member.profile?.username || "Member"}
+                            </p>
+                          </div>
+                          {member.profile?.username && (
+                            <p className="text-xs text-muted-foreground">
+                              {formatUsername(member.profile.username).display}
+                            </p>
+                          )}
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{member.role}</p>
+                        </div>
+                        {role === "admin" && member.user_id !== user?.id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            disabled={removeMember.isPending}
+                            onClick={async () => {
+                              setPendingRemoveUserId(member.user_id);
+                              try {
+                                await removeMember.mutateAsync(member.user_id);
+                              } finally {
+                                setPendingRemoveUserId(null);
+                              }
+                            }}
+                          >
+                            {removeMember.isPending && pendingRemoveUserId === member.user_id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <UserMinus className="mr-1 h-4 w-4" />
+                                Remove
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </div>
-                      {member.profile?.username && (
-                        <p className="text-xs text-muted-foreground">
-                          {formatUsername(member.profile.username).display}
-                        </p>
-                      )}
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">{member.role}</p>
                     </div>
                   ))}
                 </CardContent>

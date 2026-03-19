@@ -43,6 +43,7 @@ import {
   useUpdateGroup,
   useIsGroupAdmin,
   useAddGroupMember,
+  useRemoveGroupMember,
   useGroupMessageReactions,
   useToggleGroupMessageReaction
 } from "@/hooks/useGroups";
@@ -61,6 +62,7 @@ import {
   Search,
   AtSign,
   LogOut,
+  UserMinus,
   Reply
 } from "lucide-react";
 import { UserSearch } from "@/components/connections/UserSearch";
@@ -105,6 +107,7 @@ export default function Connections() {
   const [showMemberProfile, setShowMemberProfile] = useState(false);
   const [groupMemberSearch, setGroupMemberSearch] = useState("");
   const [pendingInviteUserId, setPendingInviteUserId] = useState<string | null>(null);
+  const [pendingRemoveUserId, setPendingRemoveUserId] = useState<string | null>(null);
   const [replyToMessageId, setReplyToMessageId] = useState<string | null>(null);
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
@@ -186,6 +189,7 @@ export default function Connections() {
   const respondToRequest = useRespondToRequest();
   const createGroup = useCreateGroup();
   const addGroupMember = useAddGroupMember();
+  const removeGroupMember = useRemoveGroupMember();
   const leaveGroup = useLeaveGroup();
   const updateGroup = useUpdateGroup();
 
@@ -391,19 +395,39 @@ export default function Connections() {
     }
   };
 
+  const selectedMemberFromGroup = useMemo(() => {
+    if (!selectedMemberId || !groupMembers?.length) return null;
+    const member = groupMembers.find((item) => item.user_id === selectedMemberId);
+    if (!member?.profile) return null;
+    return {
+      id: member.profile.id,
+      name: member.profile.name,
+      username: member.profile.username,
+      bio: null as string | null,
+      avatar_url: member.profile.avatar_url,
+    };
+  }, [groupMembers, selectedMemberId]);
+
   const { data: selectedMemberProfile, isLoading: loadingMemberProfile } = useQuery({
     queryKey: ["member-profile", selectedMemberId],
     queryFn: async () => {
-      if (!selectedMemberId) return null;
+      if (!selectedMemberId) return selectedMemberFromGroup;
       const { data, error } = await supabase
         .from("profiles_public")
         .select("id, name, username, bio, avatar_url")
         .eq("id", selectedMemberId)
-        .single();
-      if (error) throw error;
-      return data;
+        .maybeSingle();
+
+      if (error) {
+        if (import.meta.env.DEV) {
+          console.warn("Member profile fetch failed; using group data fallback.", error);
+        }
+        return selectedMemberFromGroup;
+      }
+
+      return data ?? selectedMemberFromGroup;
     },
-    enabled: !!selectedMemberId,
+    enabled: !!selectedMemberId && showMemberProfile,
   });
 
   // Scroll to bottom when new messages arrive
@@ -1217,17 +1241,19 @@ export default function Connections() {
                               groupMembers.map((member) => {
                                 const formatted = formatUsername(member.profile?.username, member.profile?.name);
                                 return (
-                                  <button
+                                  <div
                                     key={member.id}
-                                    onClick={() => {
-                                      if (member.user_id) {
-                                        setSelectedMemberId(member.user_id);
-                                        setShowMemberProfile(true);
-                                      }
-                                    }}
-                                    className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/40"
+                                    className="flex w-full items-center justify-between gap-3 rounded-lg border p-3"
                                   >
-                                    <div className="flex items-center gap-3 min-w-0">
+                                    <button
+                                      onClick={() => {
+                                        if (member.user_id) {
+                                          setSelectedMemberId(member.user_id);
+                                          setShowMemberProfile(true);
+                                        }
+                                      }}
+                                      className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
+                                    >
                                       <Avatar className="h-10 w-10 border border-border/40">
                                         {member.profile?.avatar_url ? (
                                           <AvatarImage src={member.profile.avatar_url} alt={formatted.raw} />
@@ -1237,18 +1263,47 @@ export default function Connections() {
                                         </AvatarFallback>
                                       </Avatar>
                                       <div className="min-w-0">
-                                        <p className="text-sm font-medium text-foreground truncate" title={formatted.raw}>
+                                        <p className="truncate text-sm font-medium text-foreground" title={formatted.raw}>
                                           {formatted.display || "Member"}
                                         </p>
                                         {member.profile?.username && (
                                           <p className="text-xs text-muted-foreground">@{formatted.raw}</p>
                                         )}
                                       </div>
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      {member.role === "admin" && (
+                                        <span className="text-xs font-medium text-amber-600">Admin</span>
+                                      )}
+                                      {isGroupAdmin && member.user_id !== user?.id && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          disabled={removeGroupMember.isPending}
+                                          onClick={async () => {
+                                            setPendingRemoveUserId(member.user_id);
+                                            try {
+                                              await removeGroupMember.mutateAsync({
+                                                groupId: selectedChat.id,
+                                                userId: member.user_id,
+                                              });
+                                            } finally {
+                                              setPendingRemoveUserId(null);
+                                            }
+                                          }}
+                                        >
+                                          {removeGroupMember.isPending && pendingRemoveUserId === member.user_id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <>
+                                              <UserMinus className="mr-1 h-4 w-4" />
+                                              Remove
+                                            </>
+                                          )}
+                                        </Button>
+                                      )}
                                     </div>
-                                    {member.role === "admin" && (
-                                      <span className="text-xs font-medium text-amber-600">Admin</span>
-                                    )}
-                                  </button>
+                                  </div>
                                 );
                               })
                             ) : (

@@ -191,3 +191,27 @@ export function useAddCollaborationGroupMember(groupId: string) {
     },
   });
 }
+
+export function useRemoveCollaborationGroupMember(groupId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase
+        .from("group_members")
+        .delete()
+        .eq("group_id", groupId)
+        .eq("user_id", userId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collaboration-group-members", groupId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-groups"] });
+      toast.success("Member removed");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to remove member");
+    },
+  });
+}
