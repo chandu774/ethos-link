@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { CollaborationAssignment } from "@/lib/collaboration";
 import { formatDeadline } from "@/lib/collaboration";
+import { openStorageFile } from "@/lib/storageFiles";
+import { toast } from "sonner";
 
 interface AssignmentCardProps {
   assignment: CollaborationAssignment;
@@ -32,14 +34,26 @@ export function AssignmentCard({ assignment }: AssignmentCardProps) {
           <a href="/assignments">Open Assignments</a>
         </Button>
         {assignment.attachment_url ? (
-          <Button asChild size="sm" variant="outline">
-            <a href={assignment.attachment_url} target="_blank" rel="noreferrer">
-              View Attachment
-            </a>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                await openStorageFile({
+                  bucket: "assignment-files",
+                  fileRef: assignment.attachment_url,
+                  fileName: assignment.attachment_name,
+                });
+              } catch (error) {
+                const message = error instanceof Error ? error.message : "Unable to open attachment";
+                toast.error(message);
+              }
+            }}
+          >
+            View Attachment
           </Button>
         ) : null}
       </div>
     </Card>
   );
 }
-

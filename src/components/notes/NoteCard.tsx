@@ -64,15 +64,15 @@ export function NoteCard({ note, canDelete, isDeleting, onDelete }: NoteCardProp
             className="h-36 w-full rounded-lg border border-border/40 bg-background"
           />
         ) : null}
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
             {new Date(note.created_at).toLocaleString()}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             {canDelete ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="destructive" disabled={isDeleting}>
+                  <Button size="sm" variant="destructive" disabled={isDeleting} className="flex-1 sm:flex-none">
                     {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </Button>
                 </AlertDialogTrigger>
@@ -92,7 +92,7 @@ export function NoteCard({ note, canDelete, isDeleting, onDelete }: NoteCardProp
                 </AlertDialogContent>
               </AlertDialog>
             ) : null}
-            <Button asChild size="sm" variant="outline" disabled={!note.download_url}>
+            <Button asChild size="sm" variant="outline" disabled={!note.download_url} className="flex-1 sm:flex-none">
               <a href={note.download_url || "#"} target="_blank" rel="noreferrer">
                 <Download className="mr-1 h-4 w-4" />
                 Download

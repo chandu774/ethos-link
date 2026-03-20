@@ -15,49 +15,6 @@ export type SubmissionWithUser = CollaborationSubmission & {
   user?: PublicProfile | null;
 };
 
-function getStoragePathFromRef(fileRef: string | null | undefined, bucket: string): string | null {
-  if (!fileRef) return null;
-  if (!/^https?:\/\//i.test(fileRef)) return fileRef;
-
-  try {
-    const url = new URL(fileRef);
-    const path = decodeURIComponent(url.pathname);
-    const patterns = [
-      `/storage/v1/object/public/${bucket}/`,
-      `/storage/v1/object/sign/${bucket}/`,
-      `/storage/v1/object/authenticated/${bucket}/`,
-      `/object/public/${bucket}/`,
-      `/object/sign/${bucket}/`,
-      `/object/authenticated/${bucket}/`,
-    ];
-
-    for (const pattern of patterns) {
-      const index = path.indexOf(pattern);
-      if (index >= 0) {
-        const objectPath = path.slice(index + pattern.length);
-        return objectPath || null;
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-async function toSignedUrl(
-  bucket: "assignment-files" | "submission-files",
-  fileRef: string | null | undefined
-) {
-  if (!fileRef) return null;
-  const objectPath = getStoragePathFromRef(fileRef, bucket);
-  if (!objectPath) return fileRef;
-
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60 * 60);
-  if (error) return fileRef;
-  return data?.signedUrl || fileRef;
-}
-
 export function useAssignments(groupId: string | null) {
   return useQuery({
     queryKey: ["assignments", groupId],
@@ -74,15 +31,7 @@ export function useAssignments(groupId: string | null) {
       const { data, error } = await query;
       if (error) throw error;
 
-      const assignments = (data || []) as CollaborationAssignment[];
-      const withSignedUrls = await Promise.all(
-        assignments.map(async (assignment) => ({
-          ...assignment,
-          attachment_url: await toSignedUrl("assignment-files", assignment.attachment_url),
-        }))
-      );
-
-      return withSignedUrls;
+      return (data || []) as CollaborationAssignment[];
     },
     enabled: true,
   });
@@ -173,10 +122,7 @@ export function useAssignmentDetails(assignmentId: string | null) {
       if (error) throw error;
       if (!data) return null;
 
-      return {
-        ...(data as CollaborationAssignment),
-        attachment_url: await toSignedUrl("assignment-files", data.attachment_url),
-      };
+      return data as CollaborationAssignment;
     },
     enabled: !!assignmentId,
   });
@@ -270,14 +216,7 @@ export function useAssignmentSubmissions(assignmentId: string | null) {
         .order("updated_at", { ascending: false });
       if (error) throw error;
 
-      const submissions = (data || []) as SubmissionWithUser[];
-      const withSignedUrls = await Promise.all(
-        submissions.map(async (submission) => ({
-          ...submission,
-          file_url: await toSignedUrl("submission-files", submission.file_url),
-        }))
-      );
-      return withSignedUrls;
+      return (data || []) as SubmissionWithUser[];
     },
     enabled: !!assignmentId,
   });

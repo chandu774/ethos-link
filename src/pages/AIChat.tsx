@@ -331,17 +331,18 @@ export default function AIChat() {
     <AppLayout>
       <div className="mx-auto max-w-5xl">
         {/* Mobile sidebar toggle */}
-        <div className="lg:hidden mb-4">
+        <div className="mb-4 lg:hidden">
           <Button
             variant="outline"
             onClick={() => setShowSidebar(!showSidebar)}
+            className="w-full sm:w-auto"
           >
             {showSidebar ? <X className="h-4 w-4 mr-2" /> : <Menu className="h-4 w-4 mr-2" />}
             {showSidebar ? "Close" : "Chat History"}
           </Button>
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row">
           {/* Sidebar - Desktop always visible, mobile conditional */}
           <div className={cn(
             "w-64 shrink-0 rounded-xl overflow-hidden shadow-card bg-card",
@@ -372,7 +373,7 @@ export default function AIChat() {
               </CardHeader>
               <CardContent className="p-0">
                 {/* Messages */}
-                <div className="h-[400px] overflow-y-auto p-4 space-y-4">
+                <div className="h-[400px] space-y-4 overflow-x-hidden overflow-y-auto p-3 sm:p-4">
                   {isLoading && currentConversationId ? (
                     <div className="flex items-center justify-center h-full">
                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -389,7 +390,7 @@ export default function AIChat() {
                         >
                           <div
                             className={cn(
-                              "max-w-[80%] rounded-2xl px-4 py-3",
+                              "max-w-[90%] rounded-2xl px-4 py-3 sm:max-w-[80%]",
                               message.role === "user"
                                 ? "gradient-neural text-primary-foreground rounded-br-md"
                                 : "bg-muted text-foreground rounded-bl-md"
@@ -409,7 +410,7 @@ export default function AIChat() {
                       {/* Streaming message */}
                       {isStreaming && (
                         <div className="flex justify-start">
-                          <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-muted text-foreground rounded-bl-md">
+                          <div className="max-w-[90%] rounded-2xl bg-muted px-4 py-3 text-foreground rounded-bl-md sm:max-w-[80%]">
                             {streamingContent ? (
                               <div className="prose prose-sm dark:prose-invert max-w-none">
                                 <ReactMarkdown>{streamingContent}</ReactMarkdown>
@@ -429,13 +430,13 @@ export default function AIChat() {
                 </div>
 
                 {/* Input Area */}
-                <div className="border-t p-4">
+                <div className="border-t p-3 sm:p-4">
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       handleSend();
                     }}
-                    className="flex gap-3"
+                    className="flex flex-col gap-3 sm:flex-row"
                   >
                     <Input
                       value={input}
@@ -446,7 +447,7 @@ export default function AIChat() {
                     />
                     <Button 
                       type="submit" 
-                      className="gradient-neural text-primary-foreground"
+                      className="w-full gradient-neural text-primary-foreground sm:w-auto"
                       disabled={isStreaming || !input.trim()}
                     >
                       {isStreaming ? (

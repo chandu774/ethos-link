@@ -1,6 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
-import { Brain, ClipboardList, Home, NotebookTabs, User, MessageCircle } from "lucide-react";
+import { Brain, ClipboardList, Home, NotebookTabs, User, MessageCircle, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: Home },
@@ -30,7 +32,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </span>
           </Link>
 
-          <nav className="flex items-center gap-1">
+          <nav className="hidden items-center gap-1 md:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -55,10 +57,48 @@ export function AppLayout({ children }: AppLayoutProps) {
               );
             })}
           </nav>
+
+          <div className="md:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Open navigation menu">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[85vw] max-w-xs p-4">
+                <div className="mt-8 flex flex-col gap-2">
+                  {navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive =
+                      location.pathname === item.to ||
+                      (item.to === "/chat" &&
+                        (location.pathname === "/connections" || location.pathname === "/requests"));
+
+                    return (
+                      <SheetClose asChild key={item.to}>
+                        <Link
+                          to={item.to}
+                          className={cn(
+                            "flex min-h-11 items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-all duration-200",
+                            isActive
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SheetClose>
+                    );
+                  })}
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-4 md:py-8">
         {children}
       </main>
     </div>

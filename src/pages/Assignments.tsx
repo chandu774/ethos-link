@@ -47,9 +47,9 @@ export default function AssignmentsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-5 md:space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Assignments</h1>
+          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Assignments</h1>
           <p className="text-sm text-muted-foreground">
             Review and manage all assignments in one place.
           </p>
@@ -86,7 +86,7 @@ export default function AssignmentsPage() {
           <DialogTrigger asChild>
             <Button
               size="icon"
-              className="fixed bottom-6 right-6 z-40 h-12 w-12 rounded-full shadow-xl transition-transform duration-300 hover:scale-105"
+              className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 h-12 w-12 rounded-full shadow-xl transition-transform duration-300 hover:scale-105 sm:bottom-6 sm:right-6"
             >
               <Plus className="h-5 w-5" />
             </Button>

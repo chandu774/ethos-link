@@ -35,12 +35,12 @@ export function StatsRow({ notesUploaded, assignmentsSubmitted, groupsJoined, ac
         return (
           <article
             key={stat.key}
-            className="rounded-xl bg-card/90 p-4 shadow-sm transition-transform duration-200 hover:-translate-y-0.5"
+            className="rounded-xl bg-card/90 p-3.5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 sm:p-4"
           >
             <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Icon className="h-4 w-4" />
             </div>
-            <p className="text-xl font-semibold text-foreground">
+            <p className="text-lg font-semibold text-foreground sm:text-xl">
               {value}
               {"suffix" in stat ? stat.suffix : ""}
             </p>

@@ -38,11 +38,11 @@ export default function NotesPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-5 md:space-y-6">
         <Card className="border-border/50 bg-card/85">
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardHeader className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
             <div className="space-y-1">
-              <CardTitle className="flex items-center gap-2 text-xl">
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <FileStack className="h-5 w-5 text-primary" />
                 Notes Hub
               </CardTitle>
@@ -50,7 +50,7 @@ export default function NotesPage() {
                 Upload and access group notes in one place.
               </p>
             </div>
-            <div className="w-full max-w-xs">
+            <div className="w-full sm:max-w-xs">
               <Select value={activeGroupId} onValueChange={setActiveGroupId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select group" />

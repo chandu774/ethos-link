@@ -57,9 +57,9 @@ export function ProfileHeader({
   isSaving,
 }: ProfileHeaderProps) {
   return (
-    <section className="rounded-2xl bg-card/90 p-5 shadow-sm">
+    <section className="rounded-2xl bg-card/90 p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-5">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col items-start gap-4 sm:flex-row">
           <div className="relative">
             <Avatar className="h-24 w-24 border-4 border-background shadow-md">
               {avatarPreviewUrl || profile.avatar_url ? (
@@ -107,7 +107,7 @@ export function ProfileHeader({
             ) : (
               <>
                 <div>
-                  <h1 className="text-2xl font-semibold text-foreground">{profile.name || "No display name"}</h1>
+                  <h1 className="text-xl font-semibold text-foreground sm:text-2xl">{profile.name || "No display name"}</h1>
                   <p className="text-sm text-muted-foreground">@{profile.username || "username"}</p>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">{profile.bio || "Add a short bio to introduce yourself."}</p>
@@ -116,30 +116,34 @@ export function ProfileHeader({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {isEditing ? (
             <>
-              <Button onClick={onSaveProfile} disabled={isSaving || (usernameCheck ? !usernameCheck.available : false)}>
+              <Button
+                className="w-full sm:w-auto"
+                onClick={onSaveProfile}
+                disabled={isSaving || (usernameCheck ? !usernameCheck.available : false)}
+              >
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Profile
               </Button>
-              <Button variant="outline" onClick={onCancelEditing}>
+              <Button className="w-full sm:w-auto" variant="outline" onClick={onCancelEditing}>
                 <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
             </>
           ) : (
-            <Button onClick={onToggleEditing}>
+            <Button className="w-full sm:w-auto" onClick={onToggleEditing}>
               <Edit2 className="mr-2 h-4 w-4" />
               Edit Profile
             </Button>
           )}
 
-          <Button variant="secondary" onClick={onUploadNotes}>
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={onUploadNotes}>
             <FileUp className="mr-2 h-4 w-4" />
             Upload Notes
           </Button>
-          <Button variant="outline" onClick={onViewNotes}>
+          <Button className="w-full sm:w-auto" variant="outline" onClick={onViewNotes}>
             <Eye className="mr-2 h-4 w-4" />
             View Notes
           </Button>

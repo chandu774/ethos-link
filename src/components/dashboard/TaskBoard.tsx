@@ -61,14 +61,14 @@ export function TaskBoard({ tasks, assignees = {}, onStatusChange }: TaskBoardPr
     <section className="space-y-3 animate-in fade-in-0 duration-500">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Task Board</h3>
-        <p className="text-xs text-muted-foreground">Drag cards across columns</p>
+        <p className="hidden text-xs text-muted-foreground sm:block">Drag cards across columns</p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {columns.map((column) => (
           <Card
             key={column.key}
             className={cn(
-              "min-h-[280px] border-border/40 bg-gradient-to-b p-3 shadow-sm transition-colors",
+              "min-h-[280px] border-border/40 bg-gradient-to-b p-2.5 sm:p-3 shadow-sm transition-colors",
               column.tint
             )}
             onDragOver={(event) => event.preventDefault()}

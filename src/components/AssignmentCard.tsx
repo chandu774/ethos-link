@@ -3,7 +3,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDeadline } from "@/lib/collaboration";
 import type { CollaborationAssignment } from "@/lib/collaboration";
+import { openStorageFile } from "@/lib/storageFiles";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 export function AssignmentCard({
   assignment,
@@ -27,8 +29,8 @@ export function AssignmentCard({
         }
       }}
     >
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div>
+      <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
+        <div className="min-w-0">
           <CardTitle className="text-base">{assignment.title}</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">{formatDeadline(assignment.deadline)}</p>
         </div>
@@ -39,15 +41,25 @@ export function AssignmentCard({
           {assignment.description || "No description provided."}
         </p>
         {assignment.attachment_url && (
-          <a
-            href={assignment.attachment_url}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
             className="block text-sm text-primary underline-offset-4 hover:underline"
-            onClick={(event) => event.stopPropagation()}
+            onClick={async (event) => {
+              event.stopPropagation();
+              try {
+                await openStorageFile({
+                  bucket: "assignment-files",
+                  fileRef: assignment.attachment_url,
+                  fileName: assignment.attachment_name,
+                });
+              } catch (error) {
+                const message = error instanceof Error ? error.message : "Unable to open attachment";
+                toast.error(message);
+              }
+            }}
           >
             {assignment.attachment_name || "Open attachment"}
-          </a>
+          </button>
         )}
         {onSubmit && (
           <Button

@@ -119,6 +119,21 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow-x: hidden;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+    height: auto;
   }
 }
 
@@ -152,5 +167,25 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+}
+
+@media (max-width: 768px) {
+  h1 {
+    line-height: 1.2;
+  }
+
+  h2 {
+    line-height: 1.25;
+  }
+
+  p {
+    line-height: 1.6;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
 }

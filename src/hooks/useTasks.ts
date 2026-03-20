@@ -5,12 +5,17 @@ import { supabase } from "@/integrations/supabase/client";
 import type { CollaborationTask } from "@/lib/collaboration";
 
 export function useTasks(groupId: string | null, assignedTo?: string | null) {
+  const { user } = useAuth();
+
   return useQuery({
-    queryKey: ["tasks", groupId, assignedTo],
+    queryKey: ["tasks", user?.id, groupId, assignedTo],
     queryFn: async () => {
+      if (!user) return [] as CollaborationTask[];
+
       let query = supabase
         .from("tasks")
         .select("*")
+        .eq("created_by", user.id)
         .order("deadline", { ascending: true, nullsFirst: false });
 
       if (groupId) {
@@ -25,7 +30,7 @@ export function useTasks(groupId: string | null, assignedTo?: string | null) {
       if (error) throw error;
       return data as CollaborationTask[];
     },
-    enabled: true,
+    enabled: !!user,
   });
 }
 

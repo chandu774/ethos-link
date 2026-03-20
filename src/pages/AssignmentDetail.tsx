@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Loader2, Plus, Trash2, UploadCloud } from "lucide-react";
+import { toast } from "sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,7 @@ import {
 import { formatDeadline } from "@/lib/collaboration";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGroupRole } from "@/hooks/useCollaborationGroups";
+import { openStorageFile } from "@/lib/storageFiles";
 
 export default function AssignmentDetail() {
   const { assignmentId = "" } = useParams();
@@ -53,6 +55,7 @@ export default function AssignmentDetail() {
             source_id: assignment.id,
             file_url: assignment.attachment_url,
             file_name: assignment.attachment_name || "Assignment file",
+            bucket: "assignment-files" as const,
             submitted_at: assignment.created_at,
             owner_name: "Assignment Creator",
             avatar_url: null as string | null,
@@ -69,6 +72,7 @@ export default function AssignmentDetail() {
         source_id: submission.id,
         file_url: submission.file_url!,
         file_name: submission.file_name || "Uploaded file",
+        bucket: "submission-files" as const,
         submitted_at: submission.submitted_at || submission.updated_at,
         owner_name: submission.user?.name || submission.user?.username || "Group Member",
         avatar_url: submission.user?.avatar_url || null,
@@ -78,6 +82,27 @@ export default function AssignmentDetail() {
   ];
   const canDeleteAssignment =
     assignment && (assignment.created_by === user?.id || groupRole === "admin" || groupRole === "moderator");
+
+  const openFile = async ({
+    bucket,
+    fileRef,
+    fileName,
+  }: {
+    bucket: "assignment-files" | "submission-files";
+    fileRef: string;
+    fileName: string;
+  }) => {
+    try {
+      await openStorageFile({
+        bucket,
+        fileRef,
+        fileName,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to open file";
+      toast.error(message);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -145,14 +170,19 @@ export default function AssignmentDetail() {
               {assignment.description || "No description provided."}
             </p>
             {assignment.attachment_url ? (
-              <a
-                href={assignment.attachment_url}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
                 className="inline-block text-sm text-primary underline-offset-4 hover:underline"
+                onClick={() =>
+                  openFile({
+                    bucket: "assignment-files",
+                    fileRef: assignment.attachment_url!,
+                    fileName: assignment.attachment_name || "Assignment file",
+                  })
+                }
               >
                 {assignment.attachment_name || "Open assignment attachment"}
-              </a>
+              </button>
             ) : null}
           </CardContent>
         </Card>
@@ -195,14 +225,19 @@ export default function AssignmentDetail() {
                       ) : null}
                     </div>
                   </div>
-                  <a
-                    href={file.file_url}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
                     className="text-sm text-primary underline-offset-4 hover:underline"
+                    onClick={() =>
+                      openFile({
+                        bucket: file.bucket,
+                        fileRef: file.file_url,
+                        fileName: file.file_name,
+                      })
+                    }
                   >
                     {file.file_name}
-                  </a>
+                  </button>
                   {file.can_delete ? (
                     <Button
                       variant="ghost"

@@ -64,6 +64,7 @@ import {
   LogOut,
   UserMinus,
   Reply,
+  Menu,
   Sparkles
 } from "lucide-react";
 import { UserSearch } from "@/components/connections/UserSearch";
@@ -72,6 +73,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { GroupAvatar } from "@/components/ui/group-avatar";
 import { uploadAvatarFile } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type ChatType = "direct" | "group";
 
@@ -86,6 +88,9 @@ interface ChatItem {
   memberCount?: number;
 }
 
+const MESSAGE_RENDER_WINDOW_INITIAL = 180;
+const MESSAGE_RENDER_WINDOW_STEP = 120;
+
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -94,6 +99,7 @@ export default function Chat() {
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [input, setInput] = useState("");
   const [showRequests, setShowRequests] = useState(false);
+  const [showChatList, setShowChatList] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
@@ -116,6 +122,7 @@ export default function Chat() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [openReactionForMessageId, setOpenReactionForMessageId] = useState<string | null>(null);
   const [reactionPickerPosition, setReactionPickerPosition] = useState<{ top: number; left: number } | null>(null);
+  const isMobile = useIsMobile();
   const reactionPickerRef = useRef<HTMLDivElement | null>(null);
   const messageBubbleRefs = useRef(new Map<string, HTMLDivElement>());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +130,11 @@ export default function Chat() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const autoLoadCooldownRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
+  const lastMessageIdRef = useRef<string | null>(null);
+  const [renderWindowSize, setRenderWindowSize] = useState(MESSAGE_RENDER_WINDOW_INITIAL);
+  const messagePageSize = isMobile ? 20 : 50;
 
   useEffect(() => {
     if (!openReactionForMessageId) {
@@ -169,11 +181,25 @@ export default function Chat() {
   const { data: connections, isLoading: loadingConnections } = useConnections();
   const { data: pendingRequests, isLoading: loadingRequests } = usePendingRequests();
   const { data: allUserGroups } = useUserGroups(undefined);
-  const { data: directMessages, isLoading: loadingMessages } = useMessages(
-    selectedChat?.type === "direct" ? selectedChat.partnerId || null : null
+  const {
+    data: directMessages,
+    isLoading: loadingMessages,
+    hasOlder: hasOlderDirectMessages,
+    loadOlder: loadOlderDirectMessages,
+    isLoadingOlder: loadingOlderDirectMessages,
+  } = useMessages(
+    selectedChat?.type === "direct" ? selectedChat.partnerId || null : null,
+    { pageSize: messagePageSize }
   );
-  const { data: groupMessages, isLoading: loadingGroupMessages } = useGroupMessages(
-    selectedChat?.type === "group" ? selectedChat.id : null
+  const {
+    data: groupMessages,
+    isLoading: loadingGroupMessages,
+    hasOlder: hasOlderGroupMessages,
+    loadOlder: loadOlderGroupMessages,
+    isLoadingOlder: loadingOlderGroupMessages,
+  } = useGroupMessages(
+    selectedChat?.type === "group" ? selectedChat.id : null,
+    { pageSize: messagePageSize }
   );
   const { data: groupMembers } = useGroupMembers(
     selectedChat?.type === "group" ? selectedChat.id : ""
@@ -321,16 +347,50 @@ export default function Chat() {
   });
 
   const messages = selectedChat?.type === "direct" ? directMessages : groupMessages;
+  const totalMessageCount = messages?.length ?? 0;
+  const renderStartIndex = Math.max(0, totalMessageCount - renderWindowSize);
+  const visibleMessages = messages?.slice(renderStartIndex) ?? [];
   const isLoadingMessages = selectedChat?.type === "direct" ? loadingMessages : loadingGroupMessages;
+  const hasOlderMessages =
+    selectedChat?.type === "direct" ? hasOlderDirectMessages : hasOlderGroupMessages;
+  const isLoadingOlderMessages =
+    selectedChat?.type === "direct" ? loadingOlderDirectMessages : loadingOlderGroupMessages;
+  const loadOlderMessages =
+    selectedChat?.type === "direct" ? loadOlderDirectMessages : loadOlderGroupMessages;
+  const handleMessagesScroll = () => {
+    const scrollEl = messagesScrollRef.current;
+    if (!scrollEl) return;
+    const distanceFromBottom =
+      scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 120;
+
+    if (scrollEl.scrollTop <= 220 && totalMessageCount > visibleMessages.length) {
+      setRenderWindowSize((current) =>
+        Math.min(totalMessageCount, current + MESSAGE_RENDER_WINDOW_STEP)
+      );
+    }
+
+    if (!hasOlderMessages || isLoadingOlderMessages) return;
+    if (scrollEl.scrollTop > 56) return;
+
+    const now = Date.now();
+    if (now - autoLoadCooldownRef.current < 700) return;
+    autoLoadCooldownRef.current = now;
+    void loadOlderMessages();
+  };
   const isGroupMember =
     selectedChat?.type === "group" && groupMembers?.some((member) => member.user_id === user?.id);
   const groupDisplayName =
     selectedChat?.type === "group" ? groupDetails?.name || selectedChat.name : null;
   const directMessageIds =
-    selectedChat?.type === "direct" && messages ? messages.map((message) => message.id) : [];
+    selectedChat?.type === "direct" && visibleMessages
+      ? visibleMessages.map((message) => message.id)
+      : [];
   const { data: messageReactions } = useMessageReactions(directMessageIds);
   const groupMessageIds =
-    selectedChat?.type === "group" && messages ? messages.map((message) => message.id) : [];
+    selectedChat?.type === "group" && visibleMessages
+      ? visibleMessages.map((message) => message.id)
+      : [];
   const { data: groupMessageReactions } = useGroupMessageReactions(groupMessageIds);
   const toggleMessageReaction = useToggleMessageReaction();
   const toggleReactionForMessage = (messageId: string, emoji: string) => {
@@ -432,9 +492,16 @@ export default function Chat() {
     enabled: !!selectedMemberId && showMemberProfile,
   });
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom only when user is already near bottom and a newer message arrives.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const latestMessageId = messages?.[messages.length - 1]?.id ?? null;
+    const hasNewLatest =
+      !!latestMessageId && latestMessageId !== lastMessageIdRef.current;
+
+    if (hasNewLatest && shouldAutoScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    lastMessageIdRef.current = latestMessageId;
   }, [messages]);
 
   useEffect(() => {
@@ -442,6 +509,12 @@ export default function Chat() {
       setEditingGroupName(groupDetails.name);
     }
   }, [groupDetails?.name]);
+
+  useEffect(() => {
+    autoLoadCooldownRef.current = 0;
+    shouldAutoScrollRef.current = true;
+    setRenderWindowSize(MESSAGE_RENDER_WINDOW_INITIAL);
+  }, [selectedChat?.id, selectedChat?.type]);
 
   useEffect(() => {
     setShowGroupInfo(false);
@@ -578,6 +651,7 @@ export default function Chat() {
 
   const handleSelectChat = (chat: ChatItem) => {
     setSelectedChat(chat);
+    setShowChatList(false);
     setActiveTab(chat.type === "group" ? "groups" : "direct");
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -886,9 +960,25 @@ export default function Chat() {
           </div>
         )}
 
+        <div className="mb-4 lg:hidden">
+          <Button
+            variant="outline"
+            onClick={() => setShowChatList((prev) => !prev)}
+            className="w-full sm:w-auto"
+          >
+            <Menu className="mr-2 h-4 w-4" />
+            {showChatList || !selectedChat ? "Hide Chats" : "Show Chats"}
+          </Button>
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Chat List */}
-          <Card className="shadow-card lg:col-span-1">
+          <Card
+            className={cn(
+              "shadow-card lg:col-span-1",
+              selectedChat && !showChatList ? "hidden lg:block" : "block"
+            )}
+          >
             <CardHeader className="pb-2">
               <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as typeof activeTab)}>
                 <TabsList className="grid w-full grid-cols-3">
@@ -1060,6 +1150,7 @@ export default function Chat() {
                         size="icon"
                         onClick={() => {
                           setSelectedChat(null);
+                          setShowChatList(true);
                           setSearchParams((prev) => {
                             const next = new URLSearchParams(prev);
                             next.delete("chat");
@@ -1080,7 +1171,7 @@ export default function Chat() {
                       value={groupViewTab}
                       onValueChange={(value) => setGroupViewTab(value as typeof groupViewTab)}
                     >
-                      <TabsList className="grid w-full grid-cols-4">
+                      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
                         <TabsTrigger value="chat">Chat</TabsTrigger>
                         <TabsTrigger value="files">Files</TabsTrigger>
                         <TabsTrigger value="announcements">Announcements</TabsTrigger>
@@ -1143,7 +1234,7 @@ export default function Chat() {
                             <Input
                               value={editingGroupName}
                               onChange={(e) => setEditingGroupName(e.target.value)}
-                              className="min-w-[220px] flex-1"
+                              className="min-w-0 flex-1 md:min-w-[220px]"
                             />
                             <Button
                               size="sm"
@@ -1390,15 +1481,31 @@ export default function Chat() {
                       {/* Messages */}
                   <div
                     ref={messagesScrollRef}
-                    className="h-[350px] space-y-4 overflow-y-auto overflow-x-visible p-4 pt-[calc(1rem+env(safe-area-inset-top))]"
+                    onScroll={handleMessagesScroll}
+                    className="h-[350px] space-y-4 overflow-x-hidden overflow-y-auto p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:p-4 sm:pt-[calc(1rem+env(safe-area-inset-top))]"
                   >
+                    {hasOlderMessages && (
+                      <div className="flex justify-center pb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoadingOlderMessages}
+                          onClick={() => {
+                            void loadOlderMessages();
+                          }}
+                        >
+                          {isLoadingOlderMessages ? "Loading..." : "Load older messages"}
+                        </Button>
+                      </div>
+                    )}
                     {isLoadingMessages ? (
                       <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                       </div>
                     ) : messages && messages.length > 0 ? (
                       <>
-                        {messages.map((message) => {
+                        {visibleMessages.map((message) => {
                           const isOwnMessage = message.sender_id === user?.id;
                           const senderDisplay = selectedChat.type === "group"
                             ? formatUsername((message as any).sender?.username, (message as any).sender?.name)
@@ -1438,7 +1545,7 @@ export default function Chat() {
                                   </AvatarFallback>
                                 </Avatar>
                               )}
-                              <div className="relative max-w-[80%]">
+                              <div className="relative max-w-[90%] sm:max-w-[80%]">
                                 {showActionsForMessage(message.id) && (
                                   <div
                                     className={cn(
@@ -1558,7 +1665,7 @@ export default function Chat() {
                   </div>
 
                   {/* Input */}
-                  <div className="border-t p-4">
+                  <div className="border-t p-3 sm:p-4">
                     {selectedChat.type === "direct" && isPartnerTyping && (
                       <p className="mb-2 text-xs text-muted-foreground">Typing...</p>
                     )}
@@ -1580,7 +1687,7 @@ export default function Chat() {
                         e.preventDefault();
                         handleSendMessage();
                       }}
-                      className="flex gap-3"
+                      className="flex flex-col gap-3 sm:flex-row"
                     >
                       <Input
                         value={input}
@@ -1607,7 +1714,7 @@ export default function Chat() {
                       />
                       <Button 
                         type="submit" 
-                        className="gradient-neural text-primary-foreground"
+                        className="w-full gradient-neural text-primary-foreground sm:w-auto"
                         disabled={sendMessage.isPending || sendGroupMessage.isPending || !input.trim()}
                       >
                         {(sendMessage.isPending || sendGroupMessage.isPending) ? (

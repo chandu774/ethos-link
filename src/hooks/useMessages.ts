@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,35 +13,81 @@ import { toast } from "sonner";
 
 type Message = Tables<"messages">;
 type MessageReaction = Tables<"message_reactions">;
+const DIRECT_MESSAGES_PAGE_SIZE = 40;
+const RECENT_CHATS_SCAN_LIMIT = 1000;
 
-export function useMessages(otherUserId: string | null) {
+export function useMessages(
+  otherUserId: string | null,
+  options?: { pageSize?: number }
+) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const pageSize = options?.pageSize ?? DIRECT_MESSAGES_PAGE_SIZE;
 
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: ["messages", user?.id, otherUserId],
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
       if (!otherUserId) return [];
 
-      const { data, error } = await supabase
+      let queryBuilder = supabase
         .from("messages")
         .select("*")
         .or(
           `and(sender_id.eq.${user?.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user?.id})`
         )
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(pageSize);
+
+      if (pageParam) {
+        queryBuilder = queryBuilder.lt("created_at", pageParam);
+      }
+
+      const { data, error } = await queryBuilder;
 
       if (error) throw error;
-      return data as Message[];
+      return (data as Message[]).reverse();
+    },
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.length || lastPage.length < pageSize) return undefined;
+      return lastPage[0]?.created_at ?? undefined;
     },
     enabled: !!user && !!otherUserId,
-    refetchInterval: 3000, // Poll every 3 seconds for new messages
   });
 
-  useEffect(() => {
-    if (!user || !otherUserId || !query.data?.length) return;
+  const messages = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    return [...pages].reverse().flat();
+  }, [query.data?.pages]);
 
-    const undeliveredIds = query.data
+  const upsertMessageInCache = (incoming: Message) => {
+    queryClient.setQueryData<InfiniteData<Message[], string | null>>(
+      ["messages", user?.id, otherUserId],
+      (old) => {
+        if (!old) {
+          return {
+            pages: [[incoming]],
+            pageParams: [null],
+          };
+        }
+
+        const pages = old.pages.map((page) => page.filter((message) => message.id !== incoming.id));
+        if (!pages.length) pages.push([]);
+
+        // First page holds newest chunk in ascending order; append for newest message.
+        pages[0] = [...pages[0], incoming].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        return { ...old, pages };
+      }
+    );
+  };
+
+  useEffect(() => {
+    if (!user || !otherUserId || !messages.length) return;
+
+    const undeliveredIds = messages
       .filter(
         (message) =>
           message.receiver_id === user.id &&
@@ -50,7 +102,7 @@ export function useMessages(otherUserId: string | null) {
       .from("messages")
       .update({ status: "delivered", delivered_at: new Date().toISOString() })
       .in("id", undeliveredIds);
-  }, [query.data, otherUserId, user]);
+  }, [messages, otherUserId, user]);
 
   // Subscribe to real-time updates
   useEffect(() => {
@@ -66,8 +118,13 @@ export function useMessages(otherUserId: string | null) {
           table: "messages",
           filter: `or(and(sender_id=eq.${user.id},receiver_id=eq.${otherUserId}),and(sender_id=eq.${otherUserId},receiver_id=eq.${user.id}))`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
+        (payload) => {
+          const incoming = payload.new as Message;
+          if (!incoming?.id) {
+            queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
+            return;
+          }
+          upsertMessageInCache(incoming);
         }
       )
       .on(
@@ -78,8 +135,13 @@ export function useMessages(otherUserId: string | null) {
           table: "messages",
           filter: `or(and(sender_id=eq.${user.id},receiver_id=eq.${otherUserId}),and(sender_id=eq.${otherUserId},receiver_id=eq.${user.id}))`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
+        (payload) => {
+          const updated = payload.new as Message;
+          if (!updated?.id) {
+            queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
+            return;
+          }
+          upsertMessageInCache(updated);
         }
       )
       .subscribe();
@@ -89,7 +151,13 @@ export function useMessages(otherUserId: string | null) {
     };
   }, [user, otherUserId, queryClient]);
 
-  return query;
+  return {
+    ...query,
+    data: messages,
+    hasOlder: !!query.hasNextPage,
+    loadOlder: query.fetchNextPage,
+    isLoadingOlder: query.isFetchingNextPage,
+  };
 }
 
 export function useSendMessage() {
@@ -137,7 +205,8 @@ export function useRecentChats() {
         .from("messages")
         .select("*")
         .or(`sender_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(RECENT_CHATS_SCAN_LIMIT);
 
       if (error) throw error;
 

@@ -173,8 +173,8 @@ export default function Profile() {
       />
 
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="space-y-4 lg:sticky lg:top-20 lg:h-fit">
+        <div className="grid gap-5 md:gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="space-y-3 sm:space-y-4 lg:sticky lg:top-20 lg:h-fit">
             <ProfileHeader
               profile={profile}
               avatarPreviewUrl={avatarPreviewUrl}
@@ -213,7 +213,7 @@ export default function Profile() {
             </Button>
           </aside>
 
-          <main className="space-y-4">
+          <main className="space-y-3 sm:space-y-4">
             <ProfileTabs value={activeTab} onValueChange={setActiveTab} />
 
             {loadingInsights ? <SectionLoader /> : null}

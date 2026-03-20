@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -51,6 +57,8 @@ interface GroupMessageReaction {
   emoji: string;
   created_at: string;
 }
+
+const GROUP_MESSAGES_PAGE_SIZE = 40;
 
 // Get groups the user is a member of
 export function useUserGroups(communityId?: string | null) {
@@ -164,9 +172,36 @@ export function useGroupMembers(groupId: string) {
 }
 
 // Get group messages with real-time updates - FIXED to prevent infinite subscriptions
-export function useGroupMessages(groupId: string | null) {
+export function useGroupMessages(
+  groupId: string | null,
+  options?: { pageSize?: number }
+) {
   const queryClient = useQueryClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pageSize = options?.pageSize ?? GROUP_MESSAGES_PAGE_SIZE;
+  const upsertGroupMessageInCache = (incoming: GroupMessage) => {
+    queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
+      ["group-messages", groupId],
+      (old) => {
+        if (!old) {
+          return {
+            pages: [[incoming]],
+            pageParams: [null],
+          };
+        }
+
+        const pages = old.pages.map((page) => page.filter((message) => message.id !== incoming.id));
+        if (!pages.length) pages.push([]);
+
+        // First page is newest chunk in ascending order.
+        pages[0] = [...pages[0], incoming].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        return { ...old, pages };
+      }
+    );
+  };
 
   // Set up and clean up real-time subscription properly
   useEffect(() => {
@@ -187,8 +222,28 @@ export function useGroupMessages(groupId: string | null) {
           table: "group_messages",
           filter: `group_id=eq.${groupId}`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
+        async (payload) => {
+          const messageId = (payload.new as { id?: string } | null)?.id;
+          if (!messageId) {
+            queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
+            return;
+          }
+
+          const { data, error } = await supabase
+            .from("group_messages")
+            .select(`
+              *,
+              sender:profiles(id, name, username, avatar_url)
+            `)
+            .eq("id", messageId)
+            .single();
+
+          if (error || !data) {
+            queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
+            return;
+          }
+
+          upsertGroupMessageInCache(data as GroupMessage);
         }
       )
       .subscribe();
@@ -203,25 +258,50 @@ export function useGroupMessages(groupId: string | null) {
     };
   }, [groupId, queryClient]);
 
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: ["group-messages", groupId],
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
       if (!groupId) return [];
 
-      const { data, error } = await supabase
+      let queryBuilder = supabase
         .from("group_messages")
         .select(`
           *,
           sender:profiles(id, name, username, avatar_url)
         `)
         .eq("group_id", groupId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(pageSize);
+
+      if (pageParam) {
+        queryBuilder = queryBuilder.lt("created_at", pageParam);
+      }
+
+      const { data, error } = await queryBuilder;
 
       if (error) throw error;
-      return data as GroupMessage[];
+      return (data as GroupMessage[]).reverse();
+    },
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.length || lastPage.length < pageSize) return undefined;
+      return lastPage[0]?.created_at ?? undefined;
     },
     enabled: !!groupId,
   });
+
+  const messages = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    return [...pages].reverse().flat();
+  }, [query.data?.pages]);
+
+  return {
+    ...query,
+    data: messages,
+    hasOlder: !!query.hasNextPage,
+    loadOlder: query.fetchNextPage,
+    isLoadingOlder: query.isFetchingNextPage,
+  };
 }
 
 export function useGroupDetails(groupId: string | null) {
@@ -450,7 +530,11 @@ export function useSendGroupMessage() {
       if (!user) return undefined;
 
       await queryClient.cancelQueries({ queryKey: ["group-messages", groupId] });
-      const previous = queryClient.getQueryData<GroupMessage[]>(["group-messages", groupId]) || [];
+      const previous =
+        queryClient.getQueryData<InfiniteData<GroupMessage[], string | null>>([
+          "group-messages",
+          groupId,
+        ]) ?? undefined;
       const tempId = `temp-${Date.now()}`;
 
       const optimisticMessage: GroupMessage = {
@@ -468,29 +552,62 @@ export function useSendGroupMessage() {
         },
       };
 
-      queryClient.setQueryData<GroupMessage[]>(["group-messages", groupId], (old) => {
-        const existing = old ?? [];
-        return [...existing, optimisticMessage];
-      });
+      queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
+        ["group-messages", groupId],
+        (old) => {
+          if (!old?.pages?.length) {
+            return {
+              pages: [[optimisticMessage]],
+              pageParams: [null],
+            };
+          }
+
+          const pages = [...old.pages];
+          pages[0] = [...pages[0], optimisticMessage];
+          return { ...old, pages };
+        }
+      );
 
       return { previous, tempId };
     },
     onSuccess: (data, { groupId }, context) => {
-      queryClient.setQueryData<GroupMessage[]>(["group-messages", groupId], (old) => {
-        const existing = old ?? [];
-        const cleaned = context?.tempId ? existing.filter((msg) => msg.id !== context.tempId) : existing;
-        if (!data) return cleaned;
-        const withoutDuplicate = cleaned.filter((msg) => msg.id !== data.id);
-        return [...withoutDuplicate, data].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-      });
+      queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
+        ["group-messages", groupId],
+        (old) => {
+          if (!old?.pages?.length) {
+            if (!data) return old;
+            return {
+              pages: [[data]],
+              pageParams: [null],
+            };
+          }
+
+          const pages = old.pages.map((page) =>
+            context?.tempId ? page.filter((msg) => msg.id !== context.tempId) : page
+          );
+
+          const nextData = data;
+          if (!nextData) return { ...old, pages };
+
+          const alreadyExists = pages.some((page) => page.some((msg) => msg.id === nextData.id));
+          if (!alreadyExists) {
+            pages[0] = [...pages[0], nextData].sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+          }
+
+          return { ...old, pages };
+        }
+      );
       queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
       queryClient.invalidateQueries({ queryKey: ["groups"] });
     },
     onError: (error: Error, variables, context) => {
       if (context?.previous) {
-        queryClient.setQueryData<GroupMessage[]>(["group-messages", variables.groupId], context.previous);
+        queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
+          ["group-messages", variables.groupId],
+          context.previous
+        );
       }
       toast.error(error.message || "Failed to send message");
     },

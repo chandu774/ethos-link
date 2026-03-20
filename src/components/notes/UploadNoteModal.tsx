@@ -49,7 +49,7 @@ export function UploadNoteModal({ groups }: UploadNoteModalProps) {
       <DialogTrigger asChild>
         <Button
           size="icon"
-          className="fixed bottom-6 right-6 z-40 h-12 w-12 rounded-full shadow-xl transition-transform duration-300 hover:scale-105"
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 h-12 w-12 rounded-full shadow-xl transition-transform duration-300 hover:scale-105 sm:bottom-6 sm:right-6"
         >
           <Plus className="h-5 w-5" />
         </Button>
