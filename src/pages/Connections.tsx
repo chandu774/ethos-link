@@ -29,6 +29,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useConnections, usePendingRequests, useRespondToRequest } from "@/hooks/useConnections";
 import { useMessages, useSendMessage, useMessageReactions, useToggleMessageReaction } from "@/hooks/useMessages";
@@ -65,7 +71,8 @@ import {
   LogOut,
   UserMinus,
   Reply,
-  Menu
+  Menu,
+  MoreHorizontal
 } from "lucide-react";
 import { UserSearch } from "@/components/connections/UserSearch";
 import { cn, formatUsername } from "@/lib/utils";
@@ -842,18 +849,27 @@ export default function Connections() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-bold text-foreground">Chat</h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="hidden text-sm text-muted-foreground sm:block">
                 Message classmates and class groups in real time
               </p>
             </div>
           </div>
           
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowChatList(true)}
+              className="w-full sm:hidden"
+            >
+              <Menu className="mr-2 h-4 w-4" />
+              Chats
+            </Button>
+
             {/* Search Users Button */}
             <Button
               variant={showUserSearch ? "default" : "outline"}
               onClick={() => setShowUserSearch(!showUserSearch)}
-              className="w-full sm:w-auto"
+              className="hidden w-full sm:inline-flex sm:w-auto"
             >
               <Search className="h-4 w-4 mr-2" />
               Find Classmates
@@ -862,7 +878,7 @@ export default function Connections() {
             {/* Create Group Button */}
             <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full sm:w-auto">
+                <Button variant="outline" className="hidden w-full sm:inline-flex sm:w-auto">
                   <Plus className="h-4 w-4 mr-2" />
                   New Study Group
                 </Button>
@@ -959,6 +975,25 @@ export default function Connections() {
                 </Badge>
               )}
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full sm:hidden">
+                  <MoreHorizontal className="mr-2 h-4 w-4" />
+                  More
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => setShowUserSearch((prev) => !prev)}>
+                  <Search className="mr-2 h-4 w-4" />
+                  {showUserSearch ? "Hide Find Classmates" : "Find Classmates"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setShowCreateGroup(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Study Group
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -1049,17 +1084,6 @@ export default function Connections() {
             <UserSearch onClose={() => setShowUserSearch(false)} />
           </div>
         )}
-
-        <div className="mb-4 lg:hidden">
-          <Button
-            variant="outline"
-            onClick={() => setShowChatList((prev) => !prev)}
-            className="w-full sm:w-auto"
-          >
-            <Menu className="mr-2 h-4 w-4" />
-            {selectedChat ? "Switch Chat" : "Browse Chats"}
-          </Button>
-        </div>
 
         <Sheet
           open={showChatList}
