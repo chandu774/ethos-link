@@ -20,14 +20,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen overflow-x-hidden bg-background">
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-md">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link to="/dashboard" className="flex items-center gap-2">
+        <div className="container mx-auto flex h-16 items-center justify-between gap-3 px-4">
+          <Link to="/dashboard" className="flex min-w-0 items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg gradient-neural">
               <Brain className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-semibold tracking-tight text-gradient-neural">
+            <span className="truncate text-xl font-semibold tracking-tight text-gradient-neural">
               Synapse
             </span>
           </Link>
@@ -98,7 +98,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-4 md:py-8">
+      <main className="container mx-auto overflow-x-hidden px-4 py-4 md:py-8">
         {children}
       </main>
     </div>

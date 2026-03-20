@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useConnections, usePendingRequests, useRespondToRequest } from "@/hooks/useConnections";
 import { useMessages, useSendMessage, useMessageReactions, useToggleMessageReaction } from "@/hooks/useMessages";
 import { useQuery } from "@tanstack/react-query";
@@ -98,6 +99,7 @@ export default function Connections() {
   const [input, setInput] = useState("");
   const [showRequests, setShowRequests] = useState(false);
   const [showChatList, setShowChatList] = useState(false);
+  const [hasDismissedEmptyChatList, setHasDismissedEmptyChatList] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
@@ -515,6 +517,11 @@ export default function Connections() {
   }, [selectedChat?.id, selectedChat?.type]);
 
   useEffect(() => {
+    if (!isMobile || selectedChat || hasDismissedEmptyChatList) return;
+    setShowChatList(true);
+  }, [hasDismissedEmptyChatList, isMobile, selectedChat]);
+
+  useEffect(() => {
     setShowGroupInfo(false);
     setShowLeaveDialog(false);
     setShowMemberProfile(false);
@@ -524,6 +531,9 @@ export default function Connections() {
     setActiveMessageId(null);
     setOpenReactionForMessageId(null);
     setGroupViewTab("chat");
+    if (selectedChat) {
+      setHasDismissedEmptyChatList(false);
+    }
   }, [selectedChat?.id, selectedChat?.type]);
 
   useEffect(() => {
@@ -735,27 +745,115 @@ export default function Connections() {
     }
   };
 
+  const chatListContent = (
+    <>
+      <CardHeader className="pb-2">
+        <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as typeof activeTab)}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="direct">Direct</TabsTrigger>
+            <TabsTrigger value="groups">Groups</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loadingConnections ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : filteredChatList.length > 0 ? (
+          <div className="divide-y max-h-[400px] overflow-y-auto">
+            {filteredChatList.map((chat) => (
+              <button
+                key={`${chat.type}-${chat.id}`}
+                onClick={() => handleSelectChat(chat)}
+                className={cn(
+                  "flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50",
+                  selectedChat?.id === chat.id && selectedChat?.type === chat.type && "bg-primary/5"
+                )}
+              >
+                {chat.type === "group" ? (
+                  <GroupAvatar
+                    name={chat.name}
+                    avatarUrl={chat.avatarUrl}
+                    className="h-10 w-10 border border-border/40"
+                    size="md"
+                  />
+                ) : (
+                  <Avatar className="h-10 w-10 border border-border/40">
+                    {chat.avatarUrl ? <AvatarImage src={chat.avatarUrl} alt={chat.name} /> : null}
+                    <AvatarFallback className="bg-gradient-to-br from-primary/20 to-accent/20">
+                      <User className="h-5 w-5 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {chat.type === "direct" ? (
+                      (() => {
+                        const formatted = formatUsername(chat.name);
+                        return (
+                          <span className="font-medium text-foreground truncate" title={formatted.raw}>
+                            {formatted.display}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="font-medium text-foreground truncate">{chat.name}</span>
+                    )}
+                    {chat.type === "group" && (
+                      <Badge variant="secondary" className="text-xs">
+                        Group
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {chat.type === "group" ? "Group chat" : "Direct message"}
+                  </p>
+                </div>
+                <MessageCircle className="h-4 w-4 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center">
+            <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
+            <p className="mt-4 text-muted-foreground">
+              {activeTab === "groups" ? "No groups yet" : "No chats yet"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {activeTab === "groups"
+                ? "Create a study group to start chatting"
+                : "Find classmates or join a group to start chatting"}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </>
+  );
+
   return (
     <AppLayout>
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <div className="mx-auto max-w-5xl overflow-x-hidden">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-neural">
               <Users className="h-5 w-5 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Chat</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold text-foreground">Chat</h1>
               <p className="text-sm text-muted-foreground">
                 Message classmates and class groups in real time
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
             {/* Search Users Button */}
             <Button
               variant={showUserSearch ? "default" : "outline"}
               onClick={() => setShowUserSearch(!showUserSearch)}
+              className="w-full sm:w-auto"
             >
               <Search className="h-4 w-4 mr-2" />
               Find Classmates
@@ -764,7 +862,7 @@ export default function Connections() {
             {/* Create Group Button */}
             <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
               <DialogTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" className="w-full sm:w-auto">
                   <Plus className="h-4 w-4 mr-2" />
                   New Study Group
                 </Button>
@@ -851,7 +949,7 @@ export default function Connections() {
             <Button
               variant={showRequests ? "default" : "outline"}
               onClick={() => setShowRequests(!showRequests)}
-              className="relative"
+              className="relative w-full sm:w-auto"
             >
               <Bell className="h-4 w-4 mr-2" />
               Requests
@@ -883,15 +981,15 @@ export default function Connections() {
                     return (
                     <div
                       key={request.id}
-                      className="flex items-center justify-between rounded-lg border p-4"
+                      className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-accent/20">
                           <User className="h-5 w-5 text-primary" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <h4 className="font-medium">{requesterName}</h4>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                           {requesterUsername && (
                               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                 <AtSign className="h-3 w-3" />
@@ -913,12 +1011,13 @@ export default function Connections() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex w-full gap-2 sm:w-auto">
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleReject(request.id)}
                           disabled={respondToRequest.isPending}
+                          className="flex-1 sm:flex-none"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -926,6 +1025,7 @@ export default function Connections() {
                           size="sm"
                           onClick={() => handleAccept(request.id)}
                           disabled={respondToRequest.isPending}
+                          className="flex-1 sm:flex-none"
                         >
                           <Check className="h-4 w-4 mr-1" />
                           Accept
@@ -957,114 +1057,48 @@ export default function Connections() {
             className="w-full sm:w-auto"
           >
             <Menu className="mr-2 h-4 w-4" />
-            {showChatList || !selectedChat ? "Hide Chats" : "Show Chats"}
+            {selectedChat ? "Switch Chat" : "Browse Chats"}
           </Button>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
+        <Sheet
+          open={showChatList}
+          onOpenChange={(open) => {
+            setShowChatList(open);
+            if (!open && !selectedChat) {
+              setHasDismissedEmptyChatList(true);
+            }
+          }}
+        >
+          <SheetContent side="left" className="w-[88vw] max-w-sm p-0">
+            <SheetHeader className="border-b px-4 py-4 text-left">
+              <SheetTitle>Chats</SheetTitle>
+            </SheetHeader>
+            <div className="overflow-hidden">{chatListContent}</div>
+          </SheetContent>
+        </Sheet>
+
+        <div className="grid min-w-0 gap-6 lg:grid-cols-3">
           {/* Chat List */}
           <Card
             className={cn(
-              "shadow-card lg:col-span-1",
-              selectedChat && !showChatList ? "hidden lg:block" : "block"
+              "min-w-0 shadow-card lg:col-span-1",
+              "hidden lg:block"
             )}
           >
-            <CardHeader className="pb-2">
-              <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as typeof activeTab)}>
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="direct">Direct</TabsTrigger>
-                  <TabsTrigger value="groups">Groups</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loadingConnections ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                </div>
-              ) : filteredChatList.length > 0 ? (
-                <div className="divide-y max-h-[400px] overflow-y-auto">
-                  {filteredChatList.map((chat) => (
-                    <button
-                      key={`${chat.type}-${chat.id}`}
-                      onClick={() => handleSelectChat(chat)}
-                      className={cn(
-                        "flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50",
-                        selectedChat?.id === chat.id && selectedChat?.type === chat.type && "bg-primary/5"
-                      )}
-                    >
-                      {chat.type === "group" ? (
-                        <GroupAvatar
-                          name={chat.name}
-                          avatarUrl={chat.avatarUrl}
-                          className="h-10 w-10 border border-border/40"
-                          size="md"
-                        />
-                      ) : (
-                        <Avatar className="h-10 w-10 border border-border/40">
-                          {chat.avatarUrl ? <AvatarImage src={chat.avatarUrl} alt={chat.name} /> : null}
-                          <AvatarFallback className="bg-gradient-to-br from-primary/20 to-accent/20">
-                            <User className="h-5 w-5 text-primary" />
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          {chat.type === "direct" ? (
-                            (() => {
-                              const formatted = formatUsername(chat.name);
-                              return (
-                                <span className="font-medium text-foreground truncate" title={formatted.raw}>
-                                  {formatted.display}
-                                </span>
-                              );
-                            })()
-                          ) : (
-                            <span className="font-medium text-foreground truncate">{chat.name}</span>
-                          )}
-                          {chat.type === "group" && (
-                            <Badge variant="secondary" className="text-xs">
-                              Group
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="truncate text-sm text-muted-foreground">
-                          {chat.type === "group" 
-                            ? "Group chat" 
-                            : "Direct message"}
-                        </p>
-                      </div>
-                      <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center">
-                  <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                  <p className="mt-4 text-muted-foreground">
-                    {activeTab === "groups" ? "No groups yet" : "No chats yet"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {activeTab === "groups" 
-                      ? "Create a study group to start chatting"
-                      : "Find classmates or join a group to start chatting"}
-                  </p>
-                </div>
-              )}
-            </CardContent>
+            {chatListContent}
           </Card>
 
           {/* Chat Area */}
           <Card
-            className="relative overflow-visible shadow-elevated lg:col-span-2"
+            className="relative min-w-0 overflow-visible shadow-elevated lg:col-span-2"
             style={{ "--chat-header-height": "64px" } as CSSProperties}
           >
             {selectedChat ? (
               <>
                 <CardHeader className="sticky top-0 z-20 h-16 border-b bg-card/95 p-4 backdrop-blur">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       {selectedChat.type === "group" ? (
                         <GroupAvatar
                           name={groupDisplayName || selectedChat.name}
@@ -1082,34 +1116,34 @@ export default function Connections() {
                           </AvatarFallback>
                         </Avatar>
                       )}
-                      <div>
+                      <div className="min-w-0">
                         {selectedChat.type === "direct" ? (
                           (() => {
                             const formatted = formatUsername(selectedChat.name);
                             return (
-                              <CardTitle className="text-lg" title={formatted.raw}>
+                              <CardTitle className="truncate text-lg" title={formatted.raw}>
                                 {formatted.display}
                               </CardTitle>
                             );
                           })()
                         ) : (
-                          <button onClick={() => setShowGroupInfo(true)} className="text-left">
-                            <CardTitle className="text-lg flex items-center gap-2">
+                          <button onClick={() => setShowGroupInfo(true)} className="min-w-0 text-left">
+                            <CardTitle className="flex items-center gap-2 truncate text-lg">
                               <Users className="h-4 w-4 text-muted-foreground" />
-                              {groupDisplayName || selectedChat.name}
+                              <span className="truncate">{groupDisplayName || selectedChat.name}</span>
                             </CardTitle>
                           </button>
                         )}
-                        <p className="text-sm text-muted-foreground">
+                        <p className="truncate text-sm text-muted-foreground">
                           {selectedChat.type === "group" 
                             ? `${groupMembers?.length || 0} members`
                             : "Direct message"}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="ml-3 flex shrink-0 items-center gap-2">
                       {selectedChat.type === "group" && groupMembers && (
-                        <div className="flex -space-x-2">
+                        <div className="hidden -space-x-2 sm:flex">
                           {groupMembers.slice(0, 3).map((member) => (
                             <Avatar
                               key={member.id}
@@ -1136,8 +1170,8 @@ export default function Connections() {
                         </div>
                       )}
                       <Button
-                        variant="ghost"
-                        size="icon"
+                        variant="outline"
+                        size="sm"
                         onClick={() => {
                           setSelectedChat(null);
                           setShowChatList(true);
@@ -1150,7 +1184,8 @@ export default function Connections() {
                         }}
                         className="lg:hidden"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="mr-1 h-4 w-4" />
+                        Back to chats
                       </Button>
                     </div>
                   </div>
