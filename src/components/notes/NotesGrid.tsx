@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { FileStack, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NoteCard } from "@/components/notes/NoteCard";
 import type { NoteItem } from "@/hooks/useNotes";
@@ -46,8 +46,18 @@ export function NotesGrid({
 
   if (notes.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border/60 bg-card/40 py-12 text-center">
-        <p className="text-sm text-muted-foreground">No notes yet. Upload the first one with the + button.</p>
+      <div className="rounded-2xl border border-dashed border-border/60 bg-gradient-to-br from-card/80 to-background/60 py-12 text-center">
+        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 px-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <FileStack className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-foreground">No notes here yet</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Upload the first note for this space to make study material easier for everyone to find.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

@@ -214,6 +214,9 @@ export default function Profile() {
           </aside>
 
           <main className="space-y-3 sm:space-y-4">
+            <div className="rounded-2xl border border-border/50 bg-background/70 px-4 py-3 text-sm text-muted-foreground shadow-sm">
+              This is your academic identity inside Synapse. Keep it updated so classmates can recognize you in chats, notes, and group work.
+            </div>
             <ProfileTabs value={activeTab} onValueChange={setActiveTab} />
 
             {loadingInsights ? <SectionLoader /> : null}

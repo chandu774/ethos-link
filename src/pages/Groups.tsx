@@ -304,7 +304,7 @@ export default function Groups() {
                 </span>
               </div>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/chat?requests=1">View Requests</Link>
+                <Link to="/notifications">View Requests</Link>
               </Button>
             </CardContent>
           </Card>

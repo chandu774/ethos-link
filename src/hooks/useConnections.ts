@@ -28,8 +28,32 @@ export function useConnections() {
       const connections = data as Connection[];
       if (connections.length === 0) return [] as ConnectionWithProfile[];
 
+      const uniqueConnections = Array.from(
+        connections
+          .reduce((map, connection) => {
+            const partnerId =
+              connection.requester_id === user?.id ? connection.receiver_id : connection.requester_id;
+            const existing = map.get(partnerId);
+
+            if (!existing) {
+              map.set(partnerId, connection);
+              return map;
+            }
+
+            const existingUpdatedAt = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+            const nextUpdatedAt = connection.updated_at ? new Date(connection.updated_at).getTime() : 0;
+
+            if (nextUpdatedAt >= existingUpdatedAt) {
+              map.set(partnerId, connection);
+            }
+
+            return map;
+          }, new Map<string, Connection>())
+          .values()
+      );
+
       const profileIds = Array.from(
-        new Set(connections.flatMap((c) => [c.requester_id, c.receiver_id]))
+        new Set(uniqueConnections.flatMap((c) => [c.requester_id, c.receiver_id]))
       );
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles_public")
@@ -39,7 +63,7 @@ export function useConnections() {
       if (profilesError) throw profilesError;
 
       const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
-      return connections.map((connection) => ({
+      return uniqueConnections.map((connection) => ({
         ...connection,
         requester: profileMap.get(connection.requester_id) || null,
         receiver: profileMap.get(connection.receiver_id) || null,

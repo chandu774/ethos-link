@@ -56,7 +56,6 @@ import {
   X, 
   Check, 
   Loader2, 
-  Bell, 
   Plus,
   Crown,
   Search,
@@ -739,146 +738,152 @@ export default function Chat() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-neural">
-              <Users className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Chat</h1>
-              <p className="text-sm text-muted-foreground">
-                Message classmates and class groups in real time
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => navigate("/ai-chat")}
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              AI Chat
-            </Button>
-
-            {/* Search Users Button */}
-            <Button
-              variant={showUserSearch ? "default" : "outline"}
-              onClick={() => setShowUserSearch(!showUserSearch)}
-            >
-              <Search className="h-4 w-4 mr-2" />
-              Find Classmates
-            </Button>
-
-            {/* Create Group Button */}
-            <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Study Group
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Study Group</DialogTitle>
-                  <DialogDescription>
-                    Start a focused class group for notes, deadlines, and discussions.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="group-name">Group Name</Label>
-                    <Input
-                      id="group-name"
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      placeholder="e.g., CS101 Study Group"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="group-description">Description (optional)</Label>
-                    <Textarea
-                      id="group-description"
-                      value={newGroupDescription}
-                      onChange={(e) => setNewGroupDescription(e.target.value)}
-                      placeholder="Add a short description for your class group"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Add from your connections</Label>
-                    <div className="max-h-44 space-y-2 overflow-y-auto rounded-md border border-border/60 p-3">
-                      {connectionCandidates.length > 0 ? (
-                        connectionCandidates.map((connection) => {
-                          const checked = selectedConnectionIds.includes(connection.id);
-                          return (
-                            <label
-                              key={connection.id}
-                              className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted/40"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
-                                {connection.username && (
-                                  <p className="truncate text-xs text-muted-foreground">
-                                    {formatUsername(connection.username).display}
-                                  </p>
-                                )}
-                              </div>
-                              <Checkbox
-                                checked={checked}
-                                onCheckedChange={(value) => {
-                                  setSelectedConnectionIds((prev) => {
-                                    if (value) return [...prev, connection.id];
-                                    return prev.filter((id) => id !== connection.id);
-                                  });
-                                }}
-                              />
-                            </label>
-                          );
-                        })
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No accepted connections yet.</p>
-                      )}
-                    </div>
-                  </div>
+      <div className="mx-auto max-w-6xl space-y-6">
+        <Card className="border-border/60 bg-card/85 shadow-card backdrop-blur">
+          <CardContent className="flex flex-col gap-5 p-5 sm:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl gradient-neural shadow-sm">
+                  <Users className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowCreateGroup(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateGroup} disabled={createGroup.isPending || !newGroupName.trim()}>
-                    {createGroup.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Create Group"
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-2xl font-semibold tracking-tight text-foreground">Chat</h1>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => navigate("/ai-chat")}
+                      className="h-9 w-9 rounded-full border-border/60 bg-background/80"
+                      aria-label="Open AI chat"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                    <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 rounded-full border-border/60 bg-background/80"
+                          aria-label="Create new study group"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Create Study Group</DialogTitle>
+                          <DialogDescription>
+                            Start a focused class group for notes, deadlines, and discussions.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="group-name">Group Name</Label>
+                            <Input
+                              id="group-name"
+                              value={newGroupName}
+                              onChange={(e) => setNewGroupName(e.target.value)}
+                              placeholder="e.g., CS101 Study Group"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="group-description">Description (optional)</Label>
+                            <Textarea
+                              id="group-description"
+                              value={newGroupDescription}
+                              onChange={(e) => setNewGroupDescription(e.target.value)}
+                              placeholder="Add a short description for your class group"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Add from your connections</Label>
+                            <div className="max-h-44 space-y-2 overflow-y-auto rounded-md border border-border/60 p-3">
+                              {connectionCandidates.length > 0 ? (
+                                connectionCandidates.map((connection) => {
+                                  const checked = selectedConnectionIds.includes(connection.id);
+                                  return (
+                                    <label
+                                      key={connection.id}
+                                      className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-muted/40"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
+                                        {connection.username && (
+                                          <p className="truncate text-xs text-muted-foreground">
+                                            {formatUsername(connection.username).display}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(value) => {
+                                          setSelectedConnectionIds((prev) => {
+                                            if (value) return [...prev, connection.id];
+                                            return prev.filter((id) => id !== connection.id);
+                                          });
+                                        }}
+                                      />
+                                    </label>
+                                  );
+                                })
+                              ) : (
+                                <p className="text-xs text-muted-foreground">No accepted connections yet.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowCreateGroup(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleCreateGroup} disabled={createGroup.isPending || !newGroupName.trim()}>
+                            {createGroup.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Create Group"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Keep conversations organized across direct messages and study groups with a cleaner,
+                    focused workspace.
+                  </p>
+                </div>
+              </div>
 
-            {/* Pending Requests Toggle */}
-            <Button
-              variant={showRequests ? "default" : "outline"}
-              onClick={() => setShowRequests(!showRequests)}
-              className="relative"
-            >
-              <Bell className="h-4 w-4 mr-2" />
-              Requests
-              {pendingRequests && pendingRequests.length > 0 && (
-                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center">
-                  {pendingRequests.length}
-                </Badge>
-              )}
-            </Button>
-          </div>
-        </div>
+              <div className="flex flex-col items-start gap-2 lg:items-end">
+                <Button
+                  variant={showUserSearch ? "default" : "outline"}
+                  onClick={() => setShowUserSearch(!showUserSearch)}
+                  className="rounded-full border-border/60 bg-background/80 px-4"
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  Find Classmates
+                </Button>
+                <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Real-time workspace
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Pending Requests Section */}
         {showRequests && (
-          <Card className="mb-6 shadow-card">
-            <CardHeader>
-              <CardTitle className="text-base">Pending Requests</CardTitle>
+          <Card className="shadow-card">
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Pending Requests</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review incoming classmate requests from your top navigation.
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowRequests(false)}>
+                Hide
+              </Button>
             </CardHeader>
             <CardContent>
               {loadingRequests ? (
@@ -955,33 +960,44 @@ export default function Chat() {
 
         {/* User Search Section */}
         {showUserSearch && (
-          <div className="mb-6">
+          <div>
             <UserSearch onClose={() => setShowUserSearch(false)} />
           </div>
         )}
 
-        <div className="mb-4 lg:hidden">
+        <div className="lg:hidden">
           <Button
             variant="outline"
             onClick={() => setShowChatList((prev) => !prev)}
-            className="w-full sm:w-auto"
+            className="w-full rounded-xl border-border/60 bg-background/70"
           >
             <Menu className="mr-2 h-4 w-4" />
             {showChatList || !selectedChat ? "Hide Chats" : "Show Chats"}
           </Button>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]">
           {/* Chat List */}
           <Card
             className={cn(
-              "shadow-card lg:col-span-1",
+              "overflow-hidden rounded-[28px] border-border/60 bg-card/88 shadow-card backdrop-blur lg:h-[calc(100svh-12.5rem)]",
               selectedChat && !showChatList ? "hidden lg:block" : "block"
             )}
           >
-            <CardHeader className="pb-2">
+            <CardHeader className="space-y-4 border-b border-border/50 pb-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-foreground">Messages</p>
+                  <p className="text-xs text-muted-foreground">
+                    {filteredChatList.length} conversation{filteredChatList.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+                  Inbox
+                </div>
+              </div>
               <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as typeof activeTab)}>
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid h-11 w-full grid-cols-3 rounded-full bg-muted/60 p-1">
                   <TabsTrigger value="all">All</TabsTrigger>
                   <TabsTrigger value="direct">Direct</TabsTrigger>
                   <TabsTrigger value="groups">Groups</TabsTrigger>
@@ -994,14 +1010,14 @@ export default function Chat() {
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
               ) : filteredChatList.length > 0 ? (
-                <div className="divide-y max-h-[400px] overflow-y-auto">
+                <div className="max-h-[calc(100svh-20rem)] divide-y divide-border/40 overflow-y-auto lg:max-h-[calc(100svh-18rem)]">
                   {filteredChatList.map((chat) => (
                     <button
                       key={`${chat.type}-${chat.id}`}
                       onClick={() => handleSelectChat(chat)}
                       className={cn(
-                        "flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50",
-                        selectedChat?.id === chat.id && selectedChat?.type === chat.type && "bg-primary/5"
+                        "flex w-full items-center gap-3 px-4 py-4 text-left transition-all duration-200 hover:bg-muted/45",
+                        selectedChat?.id === chat.id && selectedChat?.type === chat.type && "bg-primary/8"
                       )}
                     >
                       {chat.type === "group" ? (
@@ -1067,12 +1083,12 @@ export default function Chat() {
 
           {/* Chat Area */}
           <Card
-            className="relative overflow-visible shadow-elevated lg:col-span-2"
-            style={{ "--chat-header-height": "64px" } as CSSProperties}
+            className="relative overflow-hidden rounded-[28px] border-border/60 bg-card/92 shadow-elevated backdrop-blur lg:h-[calc(100svh-12.5rem)]"
+            style={{ "--chat-header-height": "72px" } as CSSProperties}
           >
             {selectedChat ? (
               <>
-                <CardHeader className="sticky top-0 z-20 h-16 border-b bg-card/95 p-4 backdrop-blur">
+                <CardHeader className="sticky top-0 z-20 h-[72px] border-b border-border/50 bg-card/95 px-4 py-4 backdrop-blur sm:px-5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {selectedChat.type === "group" ? (
@@ -1166,12 +1182,12 @@ export default function Chat() {
                   </div>
                 </CardHeader>
                 {selectedChat.type === "group" && (
-                  <div className="border-b bg-card/95 px-4 py-2">
+                  <div className="border-b border-border/50 bg-card/95 px-4 py-3 sm:px-5">
                     <Tabs
                       value={groupViewTab}
                       onValueChange={(value) => setGroupViewTab(value as typeof groupViewTab)}
                     >
-                      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+                      <TabsList className="grid h-11 w-full grid-cols-2 rounded-full bg-muted/60 p-1 sm:grid-cols-4">
                         <TabsTrigger value="chat">Chat</TabsTrigger>
                         <TabsTrigger value="files">Files</TabsTrigger>
                         <TabsTrigger value="announcements">Announcements</TabsTrigger>
@@ -1482,7 +1498,7 @@ export default function Chat() {
                   <div
                     ref={messagesScrollRef}
                     onScroll={handleMessagesScroll}
-                    className="h-[350px] space-y-4 overflow-x-hidden overflow-y-auto p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:p-4 sm:pt-[calc(1rem+env(safe-area-inset-top))]"
+                    className="h-[calc(100svh-23rem)] space-y-4 overflow-x-hidden overflow-y-auto bg-gradient-to-b from-background/35 to-background/10 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:h-[calc(100svh-24rem)] sm:p-4 sm:pt-[calc(1rem+env(safe-area-inset-top))] lg:h-[calc(100svh-22.5rem)]"
                   >
                     {hasOlderMessages && (
                       <div className="flex justify-center pb-2">
@@ -1549,7 +1565,7 @@ export default function Chat() {
                                 {showActionsForMessage(message.id) && (
                                   <div
                                     className={cn(
-                                      "absolute top-1/2 z-30 -translate-y-1/2 flex items-center gap-1 rounded-full border border-border/40 bg-background/90 px-2 py-1 shadow-sm transition-all",
+                                      "absolute top-1/2 z-30 flex -translate-y-1/2 items-center gap-1 rounded-full border border-border/40 bg-background/92 px-2 py-1 shadow-sm transition-all",
                                       isOwnMessage ? "right-full mr-2" : "left-full ml-2"
                                     )}
                                   >
@@ -1579,10 +1595,10 @@ export default function Chat() {
                                 )}
                                 <div
                                   className={cn(
-                                    "rounded-2xl px-4 py-3",
+                                    "rounded-[22px] px-4 py-3 shadow-sm",
                                     isOwnMessage
-                                      ? "gradient-neural text-primary-foreground rounded-br-md"
-                                      : "bg-muted text-foreground rounded-bl-md"
+                                      ? "gradient-neural rounded-br-md text-primary-foreground"
+                                      : "rounded-bl-md border border-border/40 bg-muted/85 text-foreground"
                                   )}
                                   ref={(node) => {
                                     if (!node) {
@@ -1665,7 +1681,7 @@ export default function Chat() {
                   </div>
 
                   {/* Input */}
-                  <div className="border-t p-3 sm:p-4">
+                  <div className="border-t border-border/50 bg-card/96 p-3 sm:p-4">
                     {selectedChat.type === "direct" && isPartnerTyping && (
                       <p className="mb-2 text-xs text-muted-foreground">Typing...</p>
                     )}
@@ -1687,7 +1703,7 @@ export default function Chat() {
                         e.preventDefault();
                         handleSendMessage();
                       }}
-                      className="flex flex-col gap-3 sm:flex-row"
+                      className="flex items-end gap-3"
                     >
                       <Input
                         value={input}
@@ -1709,12 +1725,13 @@ export default function Chat() {
                         }}
                         onBlur={() => sendTypingStatus(false)}
                         placeholder="Type a message..."
-                        className="flex-1"
+                        className="h-12 flex-1 rounded-full border-border/60 bg-background/85 px-5"
                         disabled={sendMessage.isPending || sendGroupMessage.isPending}
                       />
                       <Button 
                         type="submit" 
-                        className="w-full gradient-neural text-primary-foreground sm:w-auto"
+                        size="icon"
+                        className="h-12 w-12 shrink-0 rounded-full gradient-neural text-primary-foreground shadow-sm"
                         disabled={sendMessage.isPending || sendGroupMessage.isPending || !input.trim()}
                       >
                         {(sendMessage.isPending || sendGroupMessage.isPending) ? (
@@ -1757,7 +1774,7 @@ export default function Chat() {
                   )}
               </>
             ) : (
-              <CardContent className="flex h-[450px] items-center justify-center">
+              <CardContent className="flex h-[calc(100svh-12.5rem)] items-center justify-center">
                 <div className="text-center">
                   <MessageCircle className="mx-auto h-12 w-12 text-muted-foreground/50" />
                   <h3 className="mt-4 font-medium text-foreground">No conversation selected</h3>

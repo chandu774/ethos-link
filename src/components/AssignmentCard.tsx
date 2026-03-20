@@ -6,6 +6,7 @@ import type { CollaborationAssignment } from "@/lib/collaboration";
 import { openStorageFile } from "@/lib/storageFiles";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ArrowRight } from "lucide-react";
 
 export function AssignmentCard({
   assignment,
@@ -18,7 +19,7 @@ export function AssignmentCard({
 
   return (
     <Card
-      className="cursor-pointer border-border/60 bg-card/85 transition-transform duration-200 hover:-translate-y-0.5"
+      className="cursor-pointer border-border/60 bg-[linear-gradient(180deg,_hsl(var(--card)/0.96),_hsl(var(--background)/0.92))] transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-card"
       onClick={() => navigate(`/assignments/${assignment.id}`)}
       role="button"
       tabIndex={0}
@@ -73,6 +74,12 @@ export function AssignmentCard({
             Submit work
           </Button>
         )}
+        {!onSubmit ? (
+          <div className="flex items-center text-sm font-medium text-primary">
+            Open details
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

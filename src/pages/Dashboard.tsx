@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useDashboardGroups } from "@/hooks/useCollaborationGroups";
+import { usePendingRequests } from "@/hooks/useConnections";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useCreateTask, useTasks, useUpdateTaskStatus } from "@/hooks/useTasks";
 import {
   Dialog,
@@ -20,6 +22,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Loader2, Plus } from "lucide-react";
+
+const DASHBOARD_NOTIFICATION_TYPES = new Set(["connection_request", "new_assignment", "new_note"]);
 
 const DashboardLayout = lazy(() =>
   import("@/components/dashboard/DashboardLayout").then((module) => ({ default: module.DashboardLayout }))
@@ -40,6 +44,8 @@ export default function Dashboard() {
   const { data: groups = [] } = useDashboardGroups();
   const { data: assignments = [] } = useAssignments(null);
   const { data: tasks = [] } = useTasks(null);
+  const { data: pendingRequests = [] } = usePendingRequests();
+  const { data: notifications = [] } = useNotifications(100);
   const updateTaskStatus = useUpdateTaskStatus();
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
@@ -62,6 +68,13 @@ export default function Dashboard() {
     [tasks]
   );
   const name = profile?.name?.split(" ")[0] || user?.email?.split("@")[0] || "Student";
+  const unreadNotificationsCount = useMemo(
+    () =>
+      notifications.filter(
+        (notification) => !notification.is_read && DASHBOARD_NOTIFICATION_TYPES.has(notification.type)
+      ).length,
+    [notifications]
+  );
 
   return (
     <AppLayout>
@@ -72,6 +85,7 @@ export default function Dashboard() {
               name={name}
               assignmentsCount={assignmentsCount}
               openTasks={openTasks}
+              pendingRequestsCount={pendingRequests.length + unreadNotificationsCount}
             />
           </Suspense>
 

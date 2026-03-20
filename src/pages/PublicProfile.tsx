@@ -5,8 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, ArrowLeft, User } from "lucide-react";
+import { Loader2, ArrowLeft, User, MessageCircle, NotebookTabs } from "lucide-react";
 import { formatUsername } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 interface PublicProfileData {
   id: string;
@@ -54,7 +55,7 @@ export default function PublicProfile() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Card className="shadow-elevated">
+        <Card className="overflow-hidden border-border/50 bg-[radial-gradient(circle_at_top_left,_hsl(var(--primary)/0.14),_transparent_24%),linear-gradient(135deg,_hsl(var(--card)/0.96),_hsl(var(--background)/0.92))] shadow-elevated">
           <CardContent className="p-6">
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -62,6 +63,9 @@ export default function PublicProfile() {
               </div>
             ) : profile ? (
               <div className="flex flex-col items-center gap-4 text-center">
+                <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]">
+                  Public profile
+                </Badge>
                 <Avatar className="h-24 w-24 border border-border/40">
                   {profile.avatar_url ? (
                     <AvatarImage src={profile.avatar_url} alt={formatted.raw} />
@@ -80,6 +84,22 @@ export default function PublicProfile() {
                 </div>
                 <div className="max-w-xl text-sm text-muted-foreground">
                   {profile.bio || "No bio provided."}
+                </div>
+                <div className="grid w-full gap-3 pt-2 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-border/50 bg-background/70 p-4 text-left">
+                    <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <MessageCircle className="h-4 w-4" />
+                    </div>
+                    <p className="font-medium text-foreground">Visible in chat</p>
+                    <p className="mt-1 text-sm text-muted-foreground">This is the identity classmates will see in direct messages and group discussions.</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/50 bg-background/70 p-4 text-left">
+                    <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <NotebookTabs className="h-4 w-4" />
+                    </div>
+                    <p className="font-medium text-foreground">Visible in notes</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Shared notes and uploads are easier to trust when profiles feel recognizable.</p>
+                  </div>
                 </div>
               </div>
             ) : (

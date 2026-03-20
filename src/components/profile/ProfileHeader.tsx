@@ -57,11 +57,11 @@ export function ProfileHeader({
   isSaving,
 }: ProfileHeaderProps) {
   return (
-    <section className="rounded-2xl bg-card/90 p-4 shadow-sm sm:p-5">
+    <section className="overflow-hidden rounded-3xl border border-border/50 bg-[radial-gradient(circle_at_top_left,_hsl(var(--primary)/0.14),_transparent_24%),linear-gradient(135deg,_hsl(var(--card)/0.96),_hsl(var(--background)/0.92))] p-4 shadow-card sm:p-5">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-start gap-4 sm:flex-row">
           <div className="relative">
-            <Avatar className="h-24 w-24 border-4 border-background shadow-md">
+            <Avatar className="h-24 w-24 border-4 border-background shadow-md sm:h-28 sm:w-28">
               {avatarPreviewUrl || profile.avatar_url ? (
                 <AvatarImage src={avatarPreviewUrl || profile.avatar_url || ""} alt={profile.name || "Profile"} />
               ) : null}
@@ -111,6 +111,11 @@ export function ProfileHeader({
                   <p className="text-sm text-muted-foreground">@{profile.username || "username"}</p>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">{profile.bio || "Add a short bio to introduce yourself."}</p>
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-full border border-border/50 bg-background/60 px-3 py-1 text-xs text-muted-foreground">
+                    Your profile helps classmates recognize you in groups and notes.
+                  </div>
+                </div>
               </>
             )}
           </div>

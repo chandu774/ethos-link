@@ -177,6 +177,7 @@ export function useUploadNote() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast.success("Note uploaded");
     },
     onError: (error: Error) => {

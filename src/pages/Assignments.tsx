@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AssignmentCard } from "@/components/AssignmentCard";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileText, Loader2, Plus, Sparkles, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function AssignmentsPage() {
   const { data: groups = [] } = useDashboardGroups();
@@ -45,15 +46,75 @@ export default function AssignmentsPage() {
     hasAssignmentsError &&
     (assignmentsError as Error & { code?: string })?.code === "42P01";
 
+  const assignmentsByGroup = useMemo(() => {
+    const groupMap = new Map(groups.map((group) => [group.id, group.name]));
+    return assignments.reduce<Record<string, number>>((acc, assignment) => {
+      const label = groupMap.get(assignment.group_id) || "Ungrouped";
+      acc[label] = (acc[label] ?? 0) + 1;
+      return acc;
+    }, {});
+  }, [assignments, groups]);
+
   return (
     <AppLayout>
       <div className="space-y-5 md:space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Assignments</h1>
-          <p className="text-sm text-muted-foreground">
-            Review and manage all assignments in one place.
-          </p>
-        </div>
+        <Card className="overflow-hidden border-border/50 bg-[radial-gradient(circle_at_top_left,_hsl(var(--primary)/0.14),_transparent_24%),radial-gradient(circle_at_bottom_right,_hsl(var(--accent)/0.12),_transparent_28%),linear-gradient(135deg,_hsl(var(--card)/0.96),_hsl(var(--background)/0.92))] shadow-card">
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl space-y-3">
+                <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]">
+                  Deadline center
+                </Badge>
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Assignments</h1>
+                  <p className="mt-2 text-sm text-muted-foreground sm:text-base">
+                    Keep deadlines, submission materials, and assignment context in one place instead of scattered
+                    across chat and files.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                  <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <p className="text-2xl font-semibold text-foreground">{assignments.length}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Assignments</p>
+                </div>
+                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                  <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Users className="h-4 w-4" />
+                  </div>
+                  <p className="text-2xl font-semibold text-foreground">{groups.length}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Active groups</p>
+                </div>
+                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                  <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <CalendarClock className="h-4 w-4" />
+                  </div>
+                  <p className="text-2xl font-semibold text-foreground">{Object.keys(assignmentsByGroup).length}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Groups with work</p>
+                </div>
+              </div>
+            </div>
+
+            {Object.keys(assignmentsByGroup).length > 0 ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {Object.entries(assignmentsByGroup).map(([groupName, count]) => (
+                  <div
+                    key={groupName}
+                    className="rounded-full border border-border/50 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground"
+                  >
+                    <span className="font-medium text-foreground">{groupName}</span>
+                    <span className="ml-2">{count} item{count === 1 ? "" : "s"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
         {assignmentsTableMissing && (
           <Card className="border-amber-500/30 bg-amber-500/10">
             <CardContent className="flex flex-col gap-3 p-4">
@@ -74,9 +135,19 @@ export default function AssignmentsPage() {
             <AssignmentCard key={assignment.id} assignment={assignment} />
           ))}
           {assignments.length === 0 && (
-            <Card className="border-dashed border-border/60 bg-card/50 md:col-span-2 xl:col-span-3">
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No assignments yet. Create the first assignment above.
+            <Card className="border-dashed border-border/60 bg-gradient-to-br from-card/80 to-background/60 md:col-span-2 xl:col-span-3">
+              <CardContent className="py-12 text-center">
+                <div className="mx-auto max-w-md space-y-3">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">No assignments yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Create the first assignment to give your group a shared deadline, description, and attachment space.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -153,6 +224,7 @@ export default function AssignmentsPage() {
                         setNewTitle("");
                         setNewDescription("");
                         setNewDeadline("");
+                        setNewGroupId(groups[0]?.id || "");
                         setNewFile(null);
                       },
                     }
