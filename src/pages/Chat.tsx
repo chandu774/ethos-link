@@ -845,12 +845,8 @@ export default function Chat() {
                           </Button>
                         </DialogFooter>
                       </DialogContent>
-                    </Dialog>
+                      </Dialog>
                   </div>
-                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Keep conversations organized across direct messages and study groups with a cleaner,
-                    focused workspace.
-                  </p>
                 </div>
               </div>
 

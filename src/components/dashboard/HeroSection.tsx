@@ -31,10 +31,6 @@ export function HeroSection({ name, assignmentsCount, openTasks, pendingRequests
               <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl md:text-4xl">
                 {name}
               </h1>
-              <p className="max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Your classes, group work, notes, and chat are all in one workspace. Start with the thing
-                that needs attention now and keep the rest within reach.
-              </p>
             </div>
 
             <div className="flex flex-col gap-3 lg:items-end">

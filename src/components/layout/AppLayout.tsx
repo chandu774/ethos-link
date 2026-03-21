@@ -60,6 +60,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
     return location.pathname === path;
   };
+  const isChatRoute = location.pathname === "/chat" || location.pathname === "/connections";
+  const visibleNavItems = navItems.filter((item) => item.to !== "/chat" || !isChatRoute);
+  const mobileNavItems = [
+    { to: "/dashboard", label: "Home", icon: Home },
+    { to: "/assignments", label: "Tasks", icon: ClipboardList },
+    { to: "/chat", label: "Chat", icon: MessageCircle },
+    { to: "/notes", label: "Notes", icon: NotebookTabs },
+    { to: "/notifications", label: "Alerts", icon: Bell, badge: notificationCount },
+  ].filter((item) => item.to !== "/chat" || !isChatRoute);
 
   const profileName = profile?.name || "Your profile";
   const profileUsername = profile?.username ? `@${profile.username}` : "Student workspace";
@@ -89,7 +98,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </Link>
 
             <div className="mt-4 flex-1 space-y-1">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = isActiveRoute(item.to);
                 const badgeCount = item.to === "/notifications" ? notificationCount : 0;
@@ -276,14 +285,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
             <div className="mx-auto max-w-md rounded-[30px] border border-border/70 bg-card/92 px-2 py-2 shadow-[0_-18px_40px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
-              <div className="grid grid-cols-5 gap-1">
-              {[
-                { to: "/dashboard", label: "Home", icon: Home },
-                { to: "/assignments", label: "Tasks", icon: ClipboardList },
-                { to: "/chat", label: "Chat", icon: MessageCircle },
-                { to: "/notes", label: "Notes", icon: NotebookTabs },
-                { to: "/notifications", label: "Alerts", icon: Bell, badge: notificationCount },
-              ].map((item) => {
+              <div className={cn("grid gap-1", mobileNavItems.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
+              {mobileNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = isActiveRoute(item.to);
                 const badgeCount = item.badge ?? 0;

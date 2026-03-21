@@ -13,7 +13,7 @@ import {
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotifications, useMarkNotificationRead } from "@/hooks/useNotifications";
 import { usePendingRequests, useRespondToRequest } from "@/hooks/useConnections";
 import { useUserGroups } from "@/hooks/useGroups";
@@ -22,7 +22,7 @@ import { cn, formatUsername } from "@/lib/utils";
 const NOTIFICATION_TYPES_TO_SHOW = new Set(["connection_request", "new_assignment", "new_note"]);
 
 type FeedItem = {
-  kind: "notification";
+  kind: "notification" | "request";
   id: string;
   createdAt: string;
   title: string;
@@ -30,7 +30,7 @@ type FeedItem = {
   unread: boolean;
   type: string;
   actionHref: string | null;
-  notificationId: string;
+  notificationId: string | null;
   actionLabel: string | null;
   contextLabel: string | null;
   requestId?: string | null;
@@ -120,42 +120,71 @@ export default function Notifications() {
   );
 
   const feedItems = useMemo<FeedItem[]>(() => {
-    return notifications
+    const notificationItems = notifications
       .filter((notification) => NOTIFICATION_TYPES_TO_SHOW.has(notification.type))
       .map((notification) => {
-      const presentation = getNotificationPresentation(notification);
-      const contextLabel = notification.group_id ? groupMap.get(notification.group_id) || null : null;
-      const metadata =
-        notification.metadata && typeof notification.metadata === "object" && !Array.isArray(notification.metadata)
-          ? (notification.metadata as Record<string, unknown>)
-          : {};
-      const requestId =
-        typeof metadata.connection_id === "string" ? metadata.connection_id : null;
-      const pendingRequest = requestId ? pendingRequestMap.get(requestId) : undefined;
-      const description =
-        notification.type === "connection_request" && pendingRequest
-          ? `${formatUsername(
-              pendingRequest.requester?.username || null,
-              pendingRequest.requester?.name || "New classmate"
-            ).display} wants to connect with you.`
-          : notification.content;
+        const presentation = getNotificationPresentation(notification);
+        const contextLabel = notification.group_id ? groupMap.get(notification.group_id) || null : null;
+        const metadata =
+          notification.metadata && typeof notification.metadata === "object" && !Array.isArray(notification.metadata)
+            ? (notification.metadata as Record<string, unknown>)
+            : {};
+        const requestId =
+          typeof metadata.connection_id === "string" ? metadata.connection_id : null;
+        const pendingRequest = requestId ? pendingRequestMap.get(requestId) : undefined;
+        const description =
+          notification.type === "connection_request" && pendingRequest
+            ? `${formatUsername(
+                pendingRequest.requester?.username || null,
+                pendingRequest.requester?.name || "New classmate"
+              ).display} wants to connect with you.`
+            : notification.content;
 
-      return {
-        kind: "notification",
-        id: `notification-${notification.id}`,
-        createdAt: notification.created_at,
-        title: presentation.title,
-        description,
-        unread: !notification.is_read,
-        type: notification.type,
-        actionHref: presentation.actionHref,
-        actionLabel: presentation.actionLabel,
-        notificationId: notification.id,
-        contextLabel,
-        requestId,
-        requestStillPending: Boolean(requestId && pendingRequest),
-      };
+        return {
+          kind: "notification" as const,
+          id: `notification-${notification.id}`,
+          createdAt: notification.created_at,
+          title: presentation.title,
+          description,
+          unread: !notification.is_read,
+          type: notification.type,
+          actionHref: presentation.actionHref,
+          actionLabel: presentation.actionLabel,
+          notificationId: notification.id,
+          contextLabel,
+          requestId,
+          requestStillPending: Boolean(requestId && pendingRequest),
+        };
       });
+
+    const requestIdsWithNotifications = new Set(
+      notificationItems
+        .filter((item) => item.type === "connection_request" && item.requestId)
+        .map((item) => item.requestId as string)
+    );
+
+    const fallbackRequestItems = pendingRequests
+      .filter((request) => !requestIdsWithNotifications.has(request.id))
+      .map((request) => ({
+        kind: "request" as const,
+        id: `request-${request.id}`,
+        createdAt: request.created_at,
+        title: "New connection request",
+        description: `${formatUsername(
+          request.requester?.username || null,
+          request.requester?.name || "New classmate"
+        ).display} wants to connect with you.`,
+        unread: true,
+        type: "connection_request",
+        actionHref: null,
+        actionLabel: null,
+        notificationId: null,
+        contextLabel: null,
+        requestId: request.id,
+        requestStillPending: true,
+      }));
+
+    return [...notificationItems, ...fallbackRequestItems];
   }, [groupMap, notifications, pendingRequestMap]);
 
   const sortedFeedItems = useMemo(
@@ -180,9 +209,6 @@ export default function Notifications() {
                 </div>
                 <div className="space-y-1">
                   <h1 className="text-2xl font-semibold tracking-tight text-foreground">Notifications</h1>
-                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                    See connection requests, note uploads, and new assignments in one place.
-                  </p>
                 </div>
               </div>
               <div className="self-end sm:self-start">
@@ -196,7 +222,6 @@ export default function Notifications() {
         <Card className="shadow-card">
           <CardHeader className="pt-5 sm:pt-6">
             <CardTitle className="text-base">Activity</CardTitle>
-            <CardDescription>Everything that needs your attention.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {loadingNotifications || loadingRequests ? (
@@ -238,7 +263,9 @@ export default function Notifications() {
                           variant="outline"
                           onClick={() => {
                             if (item.unread) {
-                              markNotificationRead.mutate(item.notificationId);
+                              if (item.notificationId) {
+                                markNotificationRead.mutate(item.notificationId);
+                              }
                             }
                             if (!item.requestId) return;
                             respondToRequest.mutate({
@@ -255,7 +282,9 @@ export default function Notifications() {
                           size="sm"
                           onClick={() => {
                             if (item.unread) {
-                              markNotificationRead.mutate(item.notificationId);
+                              if (item.notificationId) {
+                                markNotificationRead.mutate(item.notificationId);
+                              }
                             }
                             if (!item.requestId) return;
                             respondToRequest.mutate({
@@ -276,7 +305,9 @@ export default function Notifications() {
                       className="flex w-full flex-col gap-3 text-left sm:flex-row sm:items-center sm:justify-between"
                       onClick={() => {
                         if (item.unread) {
-                          markNotificationRead.mutate(item.notificationId);
+                          if (item.notificationId) {
+                            markNotificationRead.mutate(item.notificationId);
+                          }
                         }
                         if (item.actionHref) {
                           navigate(item.actionHref);

@@ -849,9 +849,6 @@ export default function Connections() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-bold text-foreground">Chat</h1>
-              <p className="hidden text-sm text-muted-foreground sm:block">
-                Message classmates and class groups in real time
-              </p>
             </div>
           </div>
           

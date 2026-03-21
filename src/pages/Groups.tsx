@@ -284,9 +284,6 @@ export default function Groups() {
                 </div>
                 <div>
                   <h1 className="text-3xl font-bold">Welcome back, {profile?.name?.split(" ")[0] || "User"}</h1>
-                  <p className="mt-1 text-lg opacity-90">
-                    Connect with classmates and join communities that match your classes.
-                  </p>
                 </div>
               </div>
             </div>

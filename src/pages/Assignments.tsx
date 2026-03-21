@@ -67,10 +67,6 @@ export default function AssignmentsPage() {
                 </Badge>
                 <div>
                   <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Assignments</h1>
-                  <p className="mt-2 text-sm text-muted-foreground sm:text-base">
-                    Keep deadlines, submission materials, and assignment context in one place instead of scattered
-                    across chat and files.
-                  </p>
                 </div>
               </div>
 

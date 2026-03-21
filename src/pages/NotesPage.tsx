@@ -44,9 +44,6 @@ export default function NotesPage() {
                 <FileStack className="h-5 w-5 text-primary" />
                 Notes Hub
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Keep lecture notes, summaries, and study uploads organized by group instead of buried in chat.
-              </p>
             </div>
             <div className="w-full sm:max-w-xs">
               <Select value={activeGroupId} onValueChange={setActiveGroupId}>
