@@ -63,7 +63,6 @@ import {
   LogOut,
   UserMinus,
   Reply,
-  Menu,
   Sparkles
 } from "lucide-react";
 import { UserSearch } from "@/components/connections/UserSearch";
@@ -960,17 +959,6 @@ export default function Chat() {
             <UserSearch onClose={() => setShowUserSearch(false)} />
           </div>
         )}
-
-        <div className="lg:hidden">
-          <Button
-            variant="outline"
-            onClick={() => setShowChatList((prev) => !prev)}
-            className="w-full rounded-xl border-border/60 bg-background/70"
-          >
-            <Menu className="mr-2 h-4 w-4" />
-            {showChatList || !selectedChat ? "Hide Chats" : "Show Chats"}
-          </Button>
-        </div>
 
         <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]">
           {/* Chat List */}

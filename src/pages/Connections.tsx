@@ -853,15 +853,6 @@ export default function Connections() {
           </div>
           
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setShowChatList(true)}
-              className="w-full sm:hidden"
-            >
-              <Menu className="mr-2 h-4 w-4" />
-              Chats
-            </Button>
-
             {/* Search Users Button */}
             <Button
               variant={showUserSearch ? "default" : "outline"}

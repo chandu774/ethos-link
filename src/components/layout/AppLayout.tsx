@@ -283,7 +283,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {children}
           </main>
 
-          <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
+          <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(1.1rem+env(safe-area-inset-bottom))] pt-1 md:hidden">
             <div className="mx-auto max-w-md rounded-[30px] border border-border/70 bg-card/92 px-2 py-2 shadow-[0_-18px_40px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
               <div className={cn("grid gap-1", mobileNavItems.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
               {mobileNavItems.map((item) => {
