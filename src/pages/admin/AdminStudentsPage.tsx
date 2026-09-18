@@ -75,6 +75,11 @@ export default function AdminStudentsPage() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Reset Password Dialog
+  const [resetStudent, setResetStudent] = useState<StudentMember | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+
   const fetchStudents = async () => {
     setLoading(true);
     try {
@@ -145,6 +150,35 @@ export default function AdminStudentsPage() {
       toast.error(err.message || "Failed to create student account.");
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetStudent || !resetPasswordValue) return;
+
+    if (resetPasswordValue.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const { error } = await (supabase.rpc as any)("admin_reset_password", {
+        p_user_id: resetStudent.id,
+        p_new_password: resetPasswordValue,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Password updated for ${resetStudent.name} (${resetStudent.roll_number})`);
+      setResetStudent(null);
+      setResetPasswordValue("");
+    } catch (err: any) {
+      console.error("Failed to reset password:", err);
+      toast.error(err.message || "Failed to reset password");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -352,6 +386,7 @@ Portal URL: ${window.location.origin}/login`;
                       <TableHead className="font-semibold text-xs">Course & Branch</TableHead>
                       <TableHead className="font-semibold text-xs">Year & Section</TableHead>
                       <TableHead className="font-semibold text-xs">Created Date</TableHead>
+                      <TableHead className="text-right font-semibold text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -381,6 +416,20 @@ Portal URL: ${window.location.origin}/login`;
                             <Calendar className="h-3.5 w-3.5" />
                             <span>{new Date(s.created_at).toLocaleDateString()}</span>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1"
+                            onClick={() => {
+                              setResetStudent(s);
+                              setResetPasswordValue(`Synapse@${Math.floor(1000 + Math.random() * 9000)}`);
+                            }}
+                          >
+                            <KeyRound className="h-3.5 w-3.5 text-rose-500" />
+                            <span>Reset Password</span>
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -584,6 +633,69 @@ Portal URL: ${window.location.origin}/login`;
                 Close
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog: Reset Student Password */}
+        <Dialog open={!!resetStudent} onOpenChange={(open) => !open && setResetStudent(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-rose-600" />
+                <span>Reset Student Password</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Update password for {resetStudent?.name} ({resetStudent?.roll_number}). The student can log in with this new password.
+              </DialogDescription>
+            </DialogHeader>
+
+            {resetStudent && (
+              <form onSubmit={handleResetPasswordSubmit} className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="reset-pw" className="text-xs font-semibold">New Password *</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 text-[10px] text-rose-600 px-1.5"
+                      onClick={() => setResetPasswordValue(`Synapse@${Math.floor(1000 + Math.random() * 9000)}`)}
+                    >
+                      Generate Random
+                    </Button>
+                  </div>
+                  <Input
+                    id="reset-pw"
+                    value={resetPasswordValue}
+                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    placeholder="Enter at least 6 characters"
+                    className="font-mono text-sm"
+                    required
+                  />
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setResetStudent(null)}
+                    disabled={resetLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={resetLoading}
+                    className="bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                  >
+                    {resetLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>Update Password</span>
+                  </Button>
+                </DialogFooter>
+              </form>
+            )}
           </DialogContent>
         </Dialog>
       </div>

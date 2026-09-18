@@ -20,7 +20,7 @@ export function FacultyRoute({ children }: FacultyRouteProps) {
   }
 
   if (!user) {
-    return <Navigate to="/auth?role=faculty" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Strict role protection: students attempting to access faculty routes are redirected to student dashboard

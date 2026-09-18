@@ -8,7 +8,7 @@ interface StudentRouteProps {
 }
 
 export function StudentRoute({ children }: StudentRouteProps) {
-  const { user, role, loading } = useAuth();
+  const { user, role, profile, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -20,7 +20,7 @@ export function StudentRoute({ children }: StudentRouteProps) {
   }
 
   if (!user) {
-    return <Navigate to="/auth?role=student" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Strict role protection: redirect other roles to their respective workspaces
