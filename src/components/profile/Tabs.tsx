@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export type ProfileTabKey = "overview" | "notes" | "assignments" | "activity";
+export type ProfileTabKey = "overview" | "accessibility" | "notes" | "assignments" | "activity";
 
 interface ProfileTabsProps {
   value: ProfileTabKey;
@@ -10,8 +10,9 @@ interface ProfileTabsProps {
 export function ProfileTabs({ value, onValueChange }: ProfileTabsProps) {
   return (
     <Tabs value={value} onValueChange={(next) => onValueChange(next as ProfileTabKey)}>
-      <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1 sm:grid-cols-4">
+      <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1 sm:grid-cols-5">
         <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="accessibility">Accessibility</TabsTrigger>
         <TabsTrigger value="notes">Notes</TabsTrigger>
         <TabsTrigger value="assignments">Assignments</TabsTrigger>
         <TabsTrigger value="activity">Activity</TabsTrigger>

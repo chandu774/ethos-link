@@ -1,13 +1,14 @@
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Brain, Users, MessageCircle, Shield, ArrowRight, Sparkles, NotebookTabs, ClipboardList, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user, role, loading } = useAuth();
+  const navigate = useNavigate();
 
-  // Redirect logged-in users to dashboard
+  // Redirect logged-in users to role-based dashboard
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -17,7 +18,9 @@ export default function Index() {
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    if (role === "administrator") return <Navigate to="/admin/dashboard" replace />;
+    if (role === "faculty") return <Navigate to="/faculty/dashboard" replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
   return (
     <div className="min-h-screen bg-background">
@@ -33,9 +36,9 @@ export default function Index() {
           </div>
           <span className="text-xl font-semibold text-gradient-neural">Synapse</span>
         </div>
-        <Link to="/auth">
+        <Link to="/login">
           <Button className="gradient-neural text-primary-foreground hover:opacity-90">
-            Get Started
+            Sign In
           </Button>
         </Link>
       </header>
@@ -49,26 +52,65 @@ export default function Index() {
             <span>Built for class life, not generic productivity</span>
           </div>
 
-          <h1 className="text-4xl font-bold leading-tight text-foreground sm:text-5xl lg:text-6xl">
-            Your class chat, notes, assignments, and AI help in{" "}
-            <span className="text-gradient-neural">Simplified</span>
+          <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl">
+            Intelligent Infrastructure for{" "}
+            <span className="text-gradient-neural">Academic Mastery</span>
           </h1>
 
           <p className="mt-6 text-lg text-muted-foreground sm:text-xl">
-            Synapse gives students one shared workspace for deadlines, group discussions, notes, and fast AI help,
-            so study coordination stops living across five different apps.
+            Synapse unites students and instructors on a single intelligent platform: empowering learners with personalized AI guidance and providing faculty with proactive class-wide intervention signals.
           </p>
 
-          <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
-            <Link to="/auth">
-              <Button size="lg" className="gradient-neural text-primary-foreground hover:opacity-90">
-                Start your workspace
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              Built for student groups, study circles, and class coordination
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 max-w-xl">
+            {/* Student Card */}
+            <div className="rounded-2xl border-2 border-primary/40 bg-card p-5 shadow-card hover:border-primary transition-all flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-base text-foreground">STUDENT PORTAL</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">Learner</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Personalized dashboard, interactive lectures with sign language, tasks synced from instructors, and adaptive concept mastery.
+                </p>
+              </div>
+              <div className="space-y-2 pt-2">
+                <Button
+                  className="w-full gradient-neural text-primary-foreground font-semibold shadow-md shadow-primary/20"
+                  onClick={() => navigate("/login")}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Student Sign In
+                </Button>
+                <Link to="/login" className="block text-center text-xs text-muted-foreground hover:text-primary underline">
+                  Sign in with Roll Number
+                </Link>
+              </div>
+            </div>
+
+            {/* Faculty Card */}
+            <div className="rounded-2xl border-2 border-indigo-500/40 bg-card p-5 shadow-card hover:border-indigo-500 transition-all flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-base text-foreground">FACULTY PORTAL</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold">Instructor</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Classroom management, official assignments auto-synced to students, topic difficulty heatmaps, and evidence-backed support alerts.
+                </p>
+              </div>
+              <div className="space-y-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="w-full border-indigo-500/40 hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold"
+                  onClick={() => navigate("/login")}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Faculty Sign In
+                </Button>
+                <Link to="/login" className="block text-center text-xs text-muted-foreground hover:text-indigo-500 underline">
+                  Sign in with Faculty ID
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -195,8 +237,13 @@ export default function Index() {
             </div>
             <span className="font-medium text-foreground">Synapse</span>
           </div>
-          <p className="text-sm text-muted-foreground">
-            (c) 2026 Synapse. Built for students.
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <Link to="/login" className="hover:text-primary transition-colors">Institutional Login</Link>
+            <span>•</span>
+            <Link to="/login" className="hover:text-rose-500 transition-colors">Admin Console</Link>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            © 2026 Synapse Institutional Platform.
           </p>
         </div>
       </footer>

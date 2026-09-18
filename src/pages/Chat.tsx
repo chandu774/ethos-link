@@ -72,6 +72,7 @@ import { GroupAvatar } from "@/components/ui/group-avatar";
 import { uploadAvatarFile } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { AcademicActionBanner } from "@/components/chat/AcademicActionBanner";
 
 type ChatType = "direct" | "group";
 
@@ -738,6 +739,7 @@ export default function Chat() {
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
+        <AcademicActionBanner />
         <Card className="border-border/60 bg-card/85 shadow-card backdrop-blur">
           <CardContent className="flex flex-col gap-5 p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
