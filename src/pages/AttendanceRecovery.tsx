@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +42,7 @@ export default function AttendanceRecovery() {
   };
 
   return (
-    <AppLayout>
+    <StudentLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -186,10 +186,10 @@ export default function AttendanceRecovery() {
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs gap-1.5 border-primary/40 text-primary mt-1"
-                    onClick={() => navigate("/lectures/lec-dbms-norm?t=1182")}
+                    onClick={() => navigate(`/student/lectures?topic=${encodeURIComponent(synapse.missedClass?.topic || "")}`)}
                   >
                     <Play className="h-3 w-3 fill-current" />
-                    <span>Watch Segment at 19:42</span>
+                    <span>Watch Course Lecture on {synapse.missedClass?.topic || "Topic"}</span>
                   </Button>
                 </div>
               </div>
@@ -289,7 +289,7 @@ export default function AttendanceRecovery() {
           </CardContent>
         </Card>
       </div>
-    </AppLayout>
+    </StudentLayout>
   );
 }
 

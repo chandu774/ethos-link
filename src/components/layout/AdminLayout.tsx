@@ -14,6 +14,7 @@ import {
   KeyRound,
   BookOpen,
   Award,
+  Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ const adminNavItems = [
   { to: "/admin/faculty", label: "Faculty", icon: Users },
   { to: "/admin/classrooms", label: "Classrooms", icon: Building2 },
   { to: "/admin/teaching-assignments", label: "Teaching Assignments", icon: BookOpen },
+  { to: "/admin/lectures", label: "Lectures", icon: Video },
   { to: "/admin/opportunities", label: "Opportunities", icon: Award },
 ];
 

@@ -516,7 +516,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-2">
               <Link
-                to="/lectures/lec-dbms-norm"
+                to="/student/lectures"
                 className="flex items-center justify-between rounded-xl border border-border/40 bg-background/50 p-2.5 transition hover:border-primary/40 hover:bg-background/80"
               >
                 <div className="flex items-center gap-2.5">
@@ -524,8 +524,8 @@ export default function Dashboard() {
                     <Play className="h-4 w-4 fill-current" />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-foreground">Lecture with Sign Language</p>
-                    <p className="text-[10px] text-muted-foreground">DBMS Normalization</p>
+                    <p className="text-xs font-semibold text-foreground">Course Video Lectures</p>
+                    <p className="text-[10px] text-muted-foreground">Classroom Academic Resources</p>
                   </div>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />

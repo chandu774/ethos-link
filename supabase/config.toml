@@ -11,3 +11,7 @@ verify_jwt = false
 
 [functions.youtube-recommend]
 verify_jwt = false
+
+[functions.youtube-metadata]
+verify_jwt = false
+

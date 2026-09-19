@@ -27,6 +27,7 @@ const AdminClassroomsPage = lazy(() => import("./pages/admin/AdminClassroomsPage
 const AdminClassroomDetailPage = lazy(() => import("./pages/admin/AdminClassroomDetailPage"));
 const AdminTeachingAssignmentsPage = lazy(() => import("./pages/admin/AdminTeachingAssignmentsPage"));
 const AdminOpportunitiesPage = lazy(() => import("./pages/admin/AdminOpportunitiesPage"));
+const AdminLecturesPage = lazy(() => import("./pages/admin/AdminLecturesPage"));
 
 // Student Pages
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -63,6 +64,7 @@ const FacultyAnalyticsPage = lazy(() => import("./pages/faculty/FacultyAnalytics
 const FacultyAttendancePage = lazy(() => import("./pages/faculty/FacultyAttendancePage"));
 const FacultyClassroomsPage = lazy(() => import("./pages/faculty/FacultyClassroomsPage"));
 const FacultyTeachingDetailPage = lazy(() => import("./pages/faculty/FacultyTeachingDetailPage"));
+const FacultyLecturesPage = lazy(() => import("./pages/faculty/FacultyLecturesPage"));
 
 const queryClient = new QueryClient();
 
@@ -335,7 +337,7 @@ const App = () => (
                   path="/faculty/lectures"
                   element={
                     <FacultyRoute>
-                      <Lectures />
+                      <FacultyLecturesPage />
                     </FacultyRoute>
                   }
                 />
@@ -424,6 +426,14 @@ const App = () => (
                   element={
                     <AdminRoute>
                       <AdminOpportunitiesPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/lectures"
+                  element={
+                    <AdminRoute>
+                      <AdminLecturesPage />
                     </AdminRoute>
                   }
                 />
