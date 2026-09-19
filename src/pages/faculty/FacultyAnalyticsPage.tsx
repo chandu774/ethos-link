@@ -296,6 +296,17 @@ export default function FacultyAnalyticsPage() {
         `)
         .eq("teaching_assignment_id", cohortId);
 
+      const quizIds = (quizData || []).map((q: any) => q.id);
+      let attemptAnswerRows: any[] = [];
+      if (quizIds.length > 0) {
+        const { data: qAnsRows } = await supabase
+          .from("quiz_attempt_answers")
+          .select("attempt_id, student_id, topic, concept, is_correct")
+          .in("quiz_id", quizIds);
+        attemptAnswerRows = qAnsRows || [];
+      }
+      const attemptsWithGranularRows = new Set(attemptAnswerRows.map((r) => r.attempt_id));
+
       let quizAvg: number | null = null;
       let highestScore: number | null = null;
       let lowestScore: number | null = null;
@@ -338,8 +349,31 @@ export default function FacultyAnalyticsPage() {
               }
             }
 
-            // Parse answers JSON if available
-            if (att.answers && typeof att.answers === "object") {
+            // Single authoritative accumulation: prioritize quiz_attempt_answers, fallback to att.answers
+            if (attemptsWithGranularRows.has(att.id)) {
+              const matchingRows = attemptAnswerRows.filter((r) => r.attempt_id === att.id);
+              matchingRows.forEach((r) => {
+                const t = (r.topic || defaultTopic).trim();
+                if (!topicMap[t]) topicMap[t] = { correct: 0, total: 0 };
+                topicMap[t].total += 1;
+                if (r.is_correct) topicMap[t].correct += 1;
+
+                if (r.concept) {
+                  const c = String(r.concept).trim();
+                  if (!conceptMap[c]) conceptMap[c] = { topic: t, correct: 0, total: 0 };
+                  conceptMap[c].total += 1;
+                  if (r.is_correct) conceptMap[c].correct += 1;
+
+                  if (stId) {
+                    if (!studentConceptMap[c]) studentConceptMap[c] = {};
+                    if (!studentConceptMap[c][stId]) studentConceptMap[c][stId] = { correct: 0, total: 0 };
+                    studentConceptMap[c][stId].total += 1;
+                    if (r.is_correct) studentConceptMap[c][stId].correct += 1;
+                  }
+                }
+              });
+            } else if (att.answers && typeof att.answers === "object") {
+              // Fallback for legacy attempts without quiz_attempt_answers rows
               Object.values(att.answers).forEach((ansItem: any) => {
                 if (ansItem) {
                   const t = (ansItem.topic || defaultTopic).trim();
@@ -368,38 +402,6 @@ export default function FacultyAnalyticsPage() {
 
         if (totalAttemptsCount > 0) {
           quizAvg = Math.round(totalScoreSum / totalAttemptsCount);
-        }
-      }
-
-      // Also query quiz_attempt_answers directly for granular coverage
-      const quizIds = (quizData || []).map((q: any) => q.id);
-      if (quizIds.length > 0) {
-        const { data: qAnsRows } = await supabase
-          .from("quiz_attempt_answers")
-          .select("student_id, topic, concept, is_correct")
-          .in("quiz_id", quizIds);
-
-        if (qAnsRows && qAnsRows.length > 0) {
-          qAnsRows.forEach((r: any) => {
-            const t = (r.topic || "General").trim();
-            if (!topicMap[t]) topicMap[t] = { correct: 0, total: 0 };
-            topicMap[t].total += 1;
-            if (r.is_correct) topicMap[t].correct += 1;
-
-            if (r.concept) {
-              const c = String(r.concept).trim();
-              if (!conceptMap[c]) conceptMap[c] = { topic: t, correct: 0, total: 0 };
-              conceptMap[c].total += 1;
-              if (r.is_correct) conceptMap[c].correct += 1;
-
-              if (r.student_id) {
-                if (!studentConceptMap[c]) studentConceptMap[c] = {};
-                if (!studentConceptMap[c][r.student_id]) studentConceptMap[c][r.student_id] = { correct: 0, total: 0 };
-                studentConceptMap[c][r.student_id].total += 1;
-                if (r.is_correct) studentConceptMap[c][r.student_id].correct += 1;
-              }
-            }
-          });
         }
       }
 

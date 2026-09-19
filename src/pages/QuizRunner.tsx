@@ -47,10 +47,17 @@ interface QuizDetail {
   description: string | null;
 }
 
+export function getOptionText(opt: any): string {
+  if (opt === null || opt === undefined) return "";
+  if (typeof opt === "string") return opt.trim();
+  if (typeof opt === "object" && opt.text !== undefined) return String(opt.text).trim();
+  return String(opt).trim();
+}
+
 interface QuestionItem {
   id: string;
   question: string;
-  options: string[];
+  options: any[];
   correct_option_index: number;
   topic: string;
   concept: string;
@@ -111,12 +118,13 @@ export default function QuizRunner() {
         return;
       }
 
-      // 2. Fetch Questions
+      // 2. Fetch Questions with deterministic ordering
       const { data: qList, error: qsErr } = await supabase
         .from("quiz_questions")
         .select("*")
         .eq("quiz_id", quizId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
 
       if (qsErr) throw qsErr;
       const loadedQuestions = (qList as QuestionItem[]) || [];
@@ -163,16 +171,32 @@ export default function QuizRunner() {
 
     qs.forEach((q) => {
       const recorded = rawAnswers[q.id];
-      const chosen = recorded?.chosen_option ?? null;
-      const isCorrect = recorded?.is_correct ?? false;
-      const concept = q.concept || "Core Concept";
+      const rawOptions = Array.isArray(q.options) ? q.options : [];
+      const correctIndex = Number(q.correct_option_index);
+      const correctText =
+        recorded?.correct_text ||
+        (rawOptions[correctIndex] !== undefined ? getOptionText(rawOptions[correctIndex]) : "Correct Answer");
 
+      let chosenIndex: number | null = null;
+      let chosenText = "Not Answered";
+      let isCorrect = false;
+
+      if (recorded) {
+        if (recorded.chosen_option !== null && recorded.chosen_option !== undefined) {
+          chosenIndex = Number(recorded.chosen_option);
+        }
+        chosenText =
+          recorded.chosen_text ||
+          (chosenIndex !== null && rawOptions[chosenIndex] !== undefined
+            ? getOptionText(rawOptions[chosenIndex])
+            : "Not Answered");
+        isCorrect = Boolean(recorded.is_correct);
+      }
+
+      const concept = q.concept || "Core Concept";
       if (!conceptMap[concept]) conceptMap[concept] = { total: 0, correct: 0 };
       conceptMap[concept].total += 1;
       if (isCorrect) conceptMap[concept].correct += 1;
-
-      const chosenText = chosen !== null && q.options[chosen] ? q.options[chosen] : "Not Answered";
-      const correctText = q.options[q.correct_option_index] || "Correct Answer";
 
       if (!isCorrect) {
         const expl = buildMistakeExplanation(q.question, concept, chosenText, correctText, q.explanation || undefined);
@@ -236,7 +260,7 @@ export default function QuizRunner() {
 
   const handleSelectOption = (questionId: string, optIndex: number) => {
     if (attemptResult || maxAttemptsReached) return;
-    setSelectedAnswers({ ...selectedAnswers, [questionId]: optIndex });
+    setSelectedAnswers((prev) => ({ ...prev, [questionId]: Number(optIndex) }));
   };
 
   const handleNext = () => {
@@ -282,8 +306,12 @@ export default function QuizRunner() {
         if (!conceptMap[concept]) conceptMap[concept] = { correct: 0, total: 0 };
         conceptMap[concept].total += 1;
 
+        const rawOptions = Array.isArray(q.options) ? q.options : [];
         const chosen = selectedAnswers[q.id];
-        const isCorrect = chosen !== undefined && chosen === q.correct_option_index;
+        const hasAnswered = chosen !== undefined && chosen !== null;
+        const chosenIndex = hasAnswered ? Number(chosen) : null;
+        const correctIndex = Number(q.correct_option_index);
+        const isCorrect = hasAnswered && chosenIndex === correctIndex;
 
         if (isCorrect) {
           totalScore += weight;
@@ -293,17 +321,25 @@ export default function QuizRunner() {
           incorrectCount++;
         }
 
+        const chosenText =
+          chosenIndex !== null && rawOptions[chosenIndex] !== undefined
+            ? getOptionText(rawOptions[chosenIndex])
+            : "Not Answered";
+        const correctText =
+          rawOptions[correctIndex] !== undefined
+            ? getOptionText(rawOptions[correctIndex])
+            : "Correct Answer";
+
         answersObj[q.id] = {
-          chosen_option: chosen !== undefined ? chosen : null,
-          correct_option: q.correct_option_index,
+          chosen_option: chosenIndex,
+          chosen_text: chosenText,
+          correct_option: correctIndex,
+          correct_text: correctText,
           is_correct: isCorrect,
-          topic: q.topic,
-          concept: q.concept,
+          topic: q.topic || quiz.topic,
+          concept: q.concept || "General",
           marks: isCorrect ? weight : 0,
         };
-
-        const chosenText = chosen !== undefined && q.options[chosen] ? q.options[chosen] : "Not Answered";
-        const correctText = q.options[q.correct_option_index];
 
         if (!isCorrect) {
           const expl = buildMistakeExplanation(q.question, concept, chosenText, correctText, q.explanation || undefined);
@@ -366,15 +402,18 @@ export default function QuizRunner() {
       // 3. Insert question answers into public.quiz_attempt_answers (Requirement 7)
       const attemptAnswerRows = questions.map((q) => {
         const chosen = selectedAnswers[q.id];
-        const isCorrect = chosen !== undefined && chosen === q.correct_option_index;
+        const hasAnswered = chosen !== undefined && chosen !== null;
+        const chosenIndex = hasAnswered ? Number(chosen) : null;
+        const correctIndex = Number(q.correct_option_index);
+        const isCorrect = hasAnswered && chosenIndex === correctIndex;
         const weight = q.marks || 1;
         return {
           attempt_id: createdAttempt.id,
           student_id: user.id,
           quiz_id: quiz.id,
           question_id: q.id,
-          selected_option: chosen !== undefined ? chosen : null,
-          correct_option: q.correct_option_index,
+          selected_option: chosenIndex,
+          correct_option: correctIndex,
           is_correct: isCorrect,
           marks_awarded: isCorrect ? weight : 0,
           subject: quiz.subject,
@@ -845,7 +884,8 @@ export default function QuizRunner() {
 
   const currentQ = questions[currentIndex];
   const progressPercent = Math.round(((currentIndex + 1) / questions.length) * 100);
-  const isSelected = (optIdx: number) => selectedAnswers[currentQ.id] === optIdx;
+  const isSelected = (optIdx: number) =>
+    selectedAnswers[currentQ.id] !== undefined && Number(selectedAnswers[currentQ.id]) === optIdx;
 
   return (
     <StudentLayout>
@@ -913,7 +953,8 @@ export default function QuizRunner() {
           <CardContent className="space-y-3">
             {currentQ.options.map((opt, optIdx) => {
               const selected = isSelected(optIdx);
-              const label = ["A", "B", "C", "D"][optIdx];
+              const label = ["A", "B", "C", "D"][optIdx] || String(optIdx + 1);
+              const optText = getOptionText(opt);
 
               return (
                 <div
@@ -934,7 +975,7 @@ export default function QuizRunner() {
                   >
                     {label}
                   </div>
-                  <span className="leading-normal">{opt}</span>
+                  <span className="leading-normal">{optText}</span>
                 </div>
               );
             })}

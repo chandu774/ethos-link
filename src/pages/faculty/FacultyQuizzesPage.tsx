@@ -541,11 +541,13 @@ export default function FacultyQuizzesPage() {
     setPerfLoading(true);
 
     try {
-      // 1. Fetch questions for this quiz
+      // 1. Fetch questions for this quiz with deterministic ordering
       const { data: qData } = await supabase
         .from("quiz_questions")
         .select("*")
-        .eq("quiz_id", quiz.id);
+        .eq("quiz_id", quiz.id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
 
       const qs = qData || [];
 
@@ -554,28 +556,78 @@ export default function FacultyQuizzesPage() {
         .from("quiz_attempts")
         .select(`
           id,
+          user_id,
           score,
           max_score,
+          percentage,
           answers,
           completed_at,
-          user:profiles!quiz_attempts_user_id_fkey(name, roll_number)
+          user:profiles!quiz_attempts_user_id_fkey(id, name, roll_number)
         `)
-        .eq("quiz_id", quiz.id);
+        .eq("quiz_id", quiz.id)
+        .order("completed_at", { ascending: false });
 
       const atts = attData || [];
       setAttemptsList(atts);
 
-      // 3. Calculate question-level performance
+      // 3. Fetch granular answers from quiz_attempt_answers for authoritative option distribution
+      const { data: qAnsData } = await supabase
+        .from("quiz_attempt_answers")
+        .select("id, attempt_id, student_id, question_id, selected_option, correct_option, is_correct, marks_awarded")
+        .eq("quiz_id", quiz.id);
+
+      const attemptAnswers = qAnsData || [];
+
+      // 4. Calculate question-level performance and option distribution
+      const optKeys = ["A", "B", "C", "D"] as const;
       const qStats = qs.map((q, idx) => {
         let correctCount = 0;
         let totalAnswered = 0;
+        const distribution = { A: 0, B: 0, C: 0, D: 0, unattempted: 0 };
+        const correctIndex = Number(q.correct_option_index);
 
         atts.forEach((a: any) => {
-          const ans = a.answers?.[q.id] || a.answers?.[idx];
-          if (ans !== undefined) {
-            totalAnswered++;
-            if (ans.is_correct || ans === q.correct_option_index) {
-              correctCount++;
+          // Check authoritative quiz_attempt_answers first
+          const qAnsRow = attemptAnswers.find(
+            (r) => r.attempt_id === a.id && r.question_id === q.id
+          );
+
+          if (qAnsRow) {
+            if (qAnsRow.selected_option !== null && qAnsRow.selected_option !== undefined) {
+              totalAnswered++;
+              const optIndex = Number(qAnsRow.selected_option);
+              if (optIndex >= 0 && optIndex < 4) {
+                distribution[optKeys[optIndex]]++;
+              }
+              if (qAnsRow.is_correct || optIndex === correctIndex) {
+                correctCount++;
+              }
+            } else {
+              distribution.unattempted++;
+            }
+          } else {
+            // Fallback to a.answers
+            const ans = a.answers?.[q.id];
+            if (ans !== undefined && ans !== null) {
+              const chosen = typeof ans === "object" ? ans.chosen_option : ans;
+              if (chosen !== null && chosen !== undefined) {
+                totalAnswered++;
+                const optIndex = Number(chosen);
+                if (optIndex >= 0 && optIndex < 4) {
+                  distribution[optKeys[optIndex]]++;
+                }
+                const isCorr =
+                  typeof ans === "object"
+                    ? Boolean(ans.is_correct)
+                    : optIndex === correctIndex;
+                if (isCorr) {
+                  correctCount++;
+                }
+              } else {
+                distribution.unattempted++;
+              }
+            } else {
+              distribution.unattempted++;
             }
           }
         });
@@ -585,16 +637,19 @@ export default function FacultyQuizzesPage() {
           id: q.id,
           num: idx + 1,
           question: q.question,
+          options: q.options || [],
+          correct_option_index: correctIndex,
           topic: q.topic || "General",
           concept: q.concept || "Core Concept",
           correctCount,
           totalAnswered,
           pct,
+          distribution,
         };
       });
       setQuestionStats(qStats);
 
-      // 4. Calculate concept-level performance
+      // 5. Calculate concept-level performance
       const conceptMap: Record<string, { correct: number; total: number }> = {};
       qStats.forEach((qs) => {
         const c = qs.concept;
@@ -611,7 +666,7 @@ export default function FacultyQuizzesPage() {
       }));
       setConceptStats(cStats);
 
-      // 5. Calculate student-level drilldown for each concept
+      // 6. Calculate student-level drilldown for each concept
       const drilldown: Record<
         string,
         Array<{ studentId: string; name: string; rollNumber: string; correct: number; total: number; pct: number }>
@@ -625,17 +680,30 @@ export default function FacultyQuizzesPage() {
         atts.forEach((a: any) => {
           let cCorrect = 0;
           let cTotal = 0;
+
           matchingQIds.forEach((qId) => {
-            const ans = a.answers?.[qId];
-            if (ans !== undefined) {
+            const qAnsRow = attemptAnswers.find(
+              (r) => r.attempt_id === a.id && r.question_id === qId
+            );
+            if (qAnsRow && qAnsRow.selected_option !== null && qAnsRow.selected_option !== undefined) {
               cTotal++;
-              if (ans.is_correct || ans.marks > 0) cCorrect++;
+              if (qAnsRow.is_correct || qAnsRow.marks_awarded > 0) cCorrect++;
+            } else {
+              const ans = a.answers?.[qId];
+              if (ans !== undefined && ans !== null) {
+                const chosen = typeof ans === "object" ? ans.chosen_option : ans;
+                if (chosen !== null && chosen !== undefined) {
+                  cTotal++;
+                  if (ans.is_correct || ans.marks > 0) cCorrect++;
+                }
+              }
             }
           });
 
           if (cTotal > 0) {
+            const studentId = a.user_id || a.user?.id || a.id;
             studentList.push({
-              studentId: a.user?.id || a.id,
+              studentId,
               name: a.user?.name || "Student",
               rollNumber: a.user?.roll_number || "—",
               correct: cCorrect,
@@ -1595,6 +1663,7 @@ export default function FacultyQuizzesPage() {
                           <TableHead className="w-12">#</TableHead>
                           <TableHead>Concept</TableHead>
                           <TableHead>Question Preview</TableHead>
+                          <TableHead>Option Distribution</TableHead>
                           <TableHead className="text-right">Pass Rate</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1607,6 +1676,40 @@ export default function FacultyQuizzesPage() {
                             </TableCell>
                             <TableCell className="text-foreground max-w-sm truncate">
                               {qs.question}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {(["A", "B", "C", "D"] as const).map((letter, optIdx) => {
+                                  const isCorrectOpt = optIdx === qs.correct_option_index;
+                                  const count = qs.distribution?.[letter] || 0;
+                                  return (
+                                    <span
+                                      key={letter}
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                                        isCorrectOpt
+                                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                          : count > 0
+                                          ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                                          : "bg-muted/40 text-muted-foreground border-border/50"
+                                      }`}
+                                      title={`Option ${letter}: ${count} student${count === 1 ? "" : "s"}${isCorrectOpt ? " (Correct Answer)" : ""}`}
+                                    >
+                                      <span>{letter}:</span>
+                                      <span className="font-bold">{count}</span>
+                                      {isCorrectOpt && <span className="text-[9px] text-emerald-600 font-bold">✓</span>}
+                                    </span>
+                                  );
+                                })}
+                                {(qs.distribution?.unattempted || 0) > 0 && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-muted-foreground border bg-muted/20"
+                                    title={`Unattempted: ${qs.distribution.unattempted}`}
+                                  >
+                                    <span>Skip:</span>
+                                    <span>{qs.distribution.unattempted}</span>
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right font-bold">
                               <span className={qs.pct >= 70 ? "text-emerald-600" : "text-amber-600"}>
