@@ -29,9 +29,11 @@ interface PublicProfile {
 interface NoteRow {
   id: string;
   title: string;
+  description: string | null;
   subject: string;
   file_url: string;
-  group_id: string;
+  classroom_id: string | null;
+  group_id: string | null;
   user_id: string;
   created_at: string;
   uploader?: PublicProfile | null;
@@ -82,14 +84,16 @@ async function toSignedUrl(fileRef: string) {
 }
 
 export function useNotes({
-  groupId,
+  classroomId,
+  subject,
   pageSize = DEFAULT_PAGE_SIZE,
 }: {
-  groupId?: string | null;
+  classroomId?: string | null;
+  subject?: string | null;
   pageSize?: number;
 }) {
   return useInfiniteQuery({
-    queryKey: ["notes", groupId || "all", pageSize],
+    queryKey: ["notes", classroomId || "all", subject || "all", pageSize],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
       let query = supabase
@@ -98,8 +102,10 @@ export function useNotes({
           `
             id,
             title,
+            description,
             subject,
             file_url,
+            classroom_id,
             group_id,
             user_id,
             created_at,
@@ -108,8 +114,12 @@ export function useNotes({
         )
         .order("created_at", { ascending: false });
 
-      if (groupId) {
-        query = query.eq("group_id", groupId);
+      if (classroomId) {
+        query = query.eq("classroom_id", classroomId);
+      }
+
+      if (subject && subject !== "all") {
+        query = query.eq("subject", subject);
       }
 
       const from = pageParam * pageSize;
@@ -137,48 +147,75 @@ export function useUploadNote() {
   return useMutation({
     mutationFn: async ({
       title,
+      description,
       subject,
-      groupId,
+      classroomId,
       file,
     }: {
       title: string;
+      description?: string | null;
       subject: string;
-      groupId: string;
+      classroomId?: string | null;
       file: File;
     }) => {
       if (!user) throw new Error("Please login first.");
       if (!title.trim()) throw new Error("Title is required.");
       if (!subject.trim()) throw new Error("Subject is required.");
-      if (!groupId) throw new Error("Select a group.");
       if (!file) throw new Error("Attach a file.");
       if (!isAllowedFile(file)) throw new Error("Invalid file type or file is larger than 15MB.");
 
-      const path = buildStoragePath(user.id, file, `${groupId}`);
+      // Automatically determine classroom if not provided
+      let targetClassroomId = classroomId;
+      if (!targetClassroomId) {
+        const { data: memberData } = await supabase
+          .from("classroom_members")
+          .select("classroom_id")
+          .eq("student_id", user.id)
+          .maybeSingle();
+
+        targetClassroomId = memberData?.classroom_id || null;
+      }
+
+      if (!targetClassroomId) {
+        throw new Error("Your classroom has not been assigned yet. Please contact your administrator.");
+      }
+
+      // Storage path formatted with classroom ID prefix: {classroomId}/{userId}/{timestamp}-{filename}
+      const path = buildStoragePath(user.id, file, `${targetClassroomId}`);
       const { error: uploadError } = await supabase.storage.from("notes").upload(path, file, {
         cacheControl: "3600",
         upsert: false,
       });
       if (uploadError) throw uploadError;
 
-      const { data, error } = await supabase
+      // Insert record into notes table
+      // Note: Even if a client manipulated targetClassroomId, the database trigger
+      // 'assign_note_classroom' overrides it with the authenticated student's genuine classroom_members record!
+      const { data, error: insertError } = await supabase
         .from("notes")
         .insert({
           title: title.trim(),
+          description: description?.trim() || null,
           subject: subject.trim(),
           file_url: path,
-          group_id: groupId,
+          classroom_id: targetClassroomId,
           user_id: user.id,
         })
         .select("id")
         .single();
 
-      if (error) throw error;
+      // Clean up orphaned file if database insert fails
+      if (insertError) {
+        await supabase.storage.from("notes").remove([path]);
+        throw insertError;
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast.success("Note uploaded");
+      toast.success("Note shared with your classroom");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to upload note");
@@ -199,7 +236,9 @@ export function useDeleteNote() {
 
       const objectPath = getStoragePathFromRef(note.file_url, "notes");
       const { error: storageError } = await supabase.storage.from("notes").remove([objectPath]);
-      if (storageError) throw storageError;
+      if (storageError) {
+        console.warn("Storage removal note warning:", storageError);
+      }
 
       const { error } = await supabase.from("notes").delete().eq("id", note.id);
       if (error) throw error;

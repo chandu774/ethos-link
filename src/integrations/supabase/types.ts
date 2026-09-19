@@ -819,10 +819,11 @@ export type Database = {
       }
       notes: {
         Row: {
+          classroom_id: string | null
           created_at: string
           description: string | null
           file_url: string
-          group_id: string
+          group_id: string | null
           id: string
           likes_count: number
           subject: string
@@ -830,21 +831,23 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          classroom_id?: string | null
           created_at?: string
           description?: string | null
           file_url: string
-          group_id: string
+          group_id?: string | null
           id?: string
           likes_count?: number
           subject: string
           title: string
-          user_id: string
+          user_id?: string
         }
         Update: {
+          classroom_id?: string | null
           created_at?: string
           description?: string | null
           file_url?: string
-          group_id?: string
+          group_id?: string | null
           id?: string
           likes_count?: number
           subject?: string
@@ -852,6 +855,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notes_classroom_id_fkey"
+            columns: ["classroom_id"]
+            isOneToOne: false
+            referencedRelation: "classrooms"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notes_group_id_fkey"
             columns: ["group_id"]
