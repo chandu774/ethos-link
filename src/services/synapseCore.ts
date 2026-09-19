@@ -264,7 +264,47 @@ export class SynapseCoreService {
       localStorage.removeItem("synapse_academic_state_v3");
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return { ...INITIAL_STATE, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+
+        const cleanTasks = Array.isArray(parsed.tasks) ? parsed.tasks.map((t: any) => {
+          if (!t) return t;
+          let title = t.title;
+          let description = t.description;
+          if (typeof title === "object" && title !== null) {
+            description = title.description || description || "";
+            title = title.title || "Assignment";
+          }
+          return { ...t, title, description };
+        }) : INITIAL_STATE.tasks;
+
+        const cleanClassrooms = Array.isArray(parsed.classrooms) ? parsed.classrooms.map((c: any) => {
+          if (!c || !Array.isArray(c.assignments)) return c;
+          return {
+            ...c,
+            assignments: c.assignments.map((a: any) => {
+              if (!a) return a;
+              let title = a.title;
+              let description = a.description;
+              if (typeof title === "object" && title !== null) {
+                description = title.description || description || "";
+                title = title.title || "Assignment";
+              }
+              return { ...a, title, description };
+            }),
+          };
+        }) : INITIAL_STATE.classrooms;
+
+        return {
+          ...INITIAL_STATE,
+          ...parsed,
+          classrooms: cleanClassrooms,
+          concepts: Array.isArray(parsed.concepts) && parsed.concepts.length > 0 ? parsed.concepts : INITIAL_STATE.concepts,
+          recommendations: Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0 ? parsed.recommendations : INITIAL_STATE.recommendations,
+          tasks: cleanTasks,
+          missedClass: parsed.missedClass && typeof parsed.missedClass === "object" ? { ...INITIAL_STATE.missedClass, ...parsed.missedClass } : INITIAL_STATE.missedClass,
+          learningHealth: typeof parsed.learningHealth === "number" ? parsed.learningHealth : INITIAL_STATE.learningHealth,
+          overallAttendance: typeof parsed.overallAttendance === "number" ? parsed.overallAttendance : INITIAL_STATE.overallAttendance,
+        };
       }
     } catch (e) {
       console.error("Failed to load Synapse state from storage:", e);
@@ -424,29 +464,39 @@ export class SynapseCoreService {
   // Teacher creates official assignment → Automatically creates student Task
   public createTeacherAssignment(
     classroomId: string,
-    title: string,
-    description: string,
-    topic: string,
-    dueDate: string,
-    dueDateTime: string,
+    title: string | any,
+    description?: string,
+    topic?: string,
+    dueDate?: string,
+    dueDateTime?: string,
     maxMarks: number = 20,
     estimatedMinutes: number = 30,
     priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'HIGH'
   ): ClassroomAssignment {
+    const isObj = typeof title === "object" && title !== null;
+    const cleanTitle: string = isObj ? (title.title || "Assignment") : String(title || "Assignment");
+    const cleanDesc: string = isObj ? (title.description || "") : (description || "");
+    const cleanTopic: string = isObj ? (title.topic || "General") : (topic || "General");
+    const cleanDueDate: string = isObj ? (title.dueDate || "") : (dueDate || "");
+    const cleanDueDateTime: string = dueDateTime || cleanDueDate;
+    const cleanMaxMarks: number = isObj ? (Number(title.maxScore || title.maxMarks) || 20) : (maxMarks || 20);
+    const cleanEstimatedMinutes: number = isObj ? (Number(title.estimatedMinutes) || 30) : (estimatedMinutes || 30);
+    const cleanPriority: 'HIGH' | 'MEDIUM' | 'LOW' = isObj ? (title.priority || "HIGH") : priority;
+
     const classroom = this.state.classrooms.find(c => c.id === classroomId);
     const asgId = 'asg-' + Date.now();
 
     const newAssignment: ClassroomAssignment = {
       id: asgId,
       classroomId,
-      title,
-      description,
-      topic,
-      dueDate,
-      dueDateTime: dueDateTime || dueDate,
-      maxMarks,
-      estimatedMinutes,
-      priority,
+      title: cleanTitle,
+      description: cleanDesc,
+      topic: cleanTopic,
+      dueDate: cleanDueDate,
+      dueDateTime: cleanDueDateTime,
+      maxMarks: cleanMaxMarks,
+      estimatedMinutes: cleanEstimatedMinutes,
+      priority: cleanPriority,
       status: 'assigned',
     };
 
@@ -459,13 +509,13 @@ export class SynapseCoreService {
     // AUTOMATIC TASK SYNCHRONIZATION
     this.state.tasks.unshift({
       id: 'task-asg-' + Date.now(),
-      title,
+      title: cleanTitle,
       subject: classroom ? classroom.code : 'Academic',
-      description: `${description} (${maxMarks} Marks)`,
-      deadline: dueDateTime || dueDate,
-      priority,
+      description: `${cleanDesc} (${cleanMaxMarks} Marks)`,
+      deadline: cleanDueDateTime || cleanDueDate,
+      priority: cleanPriority,
       status: 'pending',
-      estimatedMinutes,
+      estimatedMinutes: cleanEstimatedMinutes,
       source: 'Official Classroom Assignment',
       assignmentId: asgId,
       classroomId,
@@ -474,7 +524,7 @@ export class SynapseCoreService {
     // Update recommendations based on new workload
     this.recalculateWorkloadAndRecommendations();
 
-    this.logLearningEvent('ASSIGNMENT_CREATED', title, classroom?.code || 'CS301', `Due: ${dueDate}, Topic: ${topic}`);
+    this.logLearningEvent('ASSIGNMENT_CREATED', cleanTitle, classroom?.code || 'CS301', `Due: ${cleanDueDate}, Topic: ${cleanTopic}`);
     this.saveState();
     return newAssignment;
   }

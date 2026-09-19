@@ -14,26 +14,15 @@ serve(async (req) => {
   try {
     const { messages } = await req.json();
     
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY is not configured");
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is not configured");
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
-    console.log("Sending request to Lovable AI with", messages.length, "messages");
+    console.log("Sending request to Gemini with", messages.length, "messages");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { 
-            role: "system", 
-            content: `You are Synapse AI, a conversational AI companion powered by Google Gemini. Behave like a real AI assistant similar to ChatGPT.
+    const systemPrompt = `You are Synapse AI, a conversational AI companion powered by Google Gemini. Behave like a real AI assistant similar to ChatGPT.
 
 CONVERSATION STYLE:
 - Friendly, human-like, and casual by default
@@ -65,13 +54,29 @@ CORE BEHAVIOR:
 - Be supportive, encouraging, and genuine
 - Use humor when appropriate
 
-You're having a real conversation with a real person. Be natural, intelligent, and human.`
-          },
-          ...messages,
-        ],
-        stream: true,
-      }),
-    });
+You're having a real conversation with a real person. Be natural, intelligent, and human.`;
+
+    const contents = (messages || [])
+      .filter((m: { role: string; content: string }) => m?.role === "user" || m?.role === "assistant")
+      .map((m: { role: string; content: string }) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents,
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -97,7 +102,58 @@ You're having a real conversation with a real person. Be natural, intelligent, a
       );
     }
 
-    console.log("Streaming response from AI gateway");
+    console.log("Streaming response from Gemini");
+
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error("No response body from Gemini");
+    }
+
+    (async () => {
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let newlineIndex: number;
+          while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+            let line = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 1);
+
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (!line.startsWith("data:")) continue;
+
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+
+            try {
+              const json = JSON.parse(payload);
+              const textParts = json?.candidates?.[0]?.content?.parts ?? [];
+              for (const part of textParts) {
+                const text = part?.text;
+                if (text) {
+                  const out = JSON.stringify({ choices: [{ delta: { content: text } }] });
+                  await writer.write(new TextEncoder().encode(`data: ${out}\n\n`));
+                }
+              }
+            } catch {
+              // Ignore malformed chunk and continue
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Streaming parse error:", err);
+      } finally {
+        await writer.write(new TextEncoder().encode("data: [DONE]\n\n"));
+        await writer.close();
+      }
+    })();
 
     return new Response(response.body, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },

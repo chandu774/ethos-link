@@ -121,7 +121,9 @@ export default function FacultyQuizzesPage() {
   // AI Quiz Generation Modal
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGeneratingStage, setAiGeneratingStage] = useState(""); // stage label during generation
   const [aiTopic, setAiTopic] = useState("");
+  const [aiQuizTitle, setAiQuizTitle] = useState("");
   const [aiConcepts, setAiConcepts] = useState("");
   const [aiDifficulty, setAiDifficulty] = useState("Medium");
   const [aiNumQuestions, setAiNumQuestions] = useState("4");
@@ -371,34 +373,70 @@ export default function FacultyQuizzesPage() {
     }
 
     setAiGenerating(true);
+    setAiGeneratingStage("Calling AI engine...");
     try {
       const count = Number(aiNumQuestions) || 4;
       const parsedConcepts = aiConcepts.split(",").map((c) => c.trim()).filter(Boolean);
 
-      const generated = await generateAndValidateQuiz({
+      setAiGeneratingStage("Generating questions...");
+      const result = await generateAndValidateQuiz({
         subject: cohort.subject_name,
         topic: aiTopic.trim(),
         concepts: parsedConcepts,
         difficulty: aiDifficulty as any,
         questionCount: count,
       });
+      setAiGeneratingStage("Validating topic accuracy...");
 
-      if (generated.length === 0) {
-        toast.error("Could not generate valid questions. Please adjust topic or concepts.");
+      if (result.error && result.questions.length === 0) {
+        console.error("[AI Quiz Generation] Failure:", {
+          error: result.error,
+          topic: aiTopic,
+          concepts: parsedConcepts,
+          subject: cohort.subject_name,
+        });
+
+        const errLower = (result.error || "").toLowerCase();
+        if (errLower.includes("configuration") || errLower.includes("gemini_api_key") || errLower.includes("missing")) {
+          toast.error(`AI Configuration Error: ${result.error}`);
+        } else if (errLower.includes("rate limit") || errLower.includes("503") || errLower.includes("busy") || errLower.includes("quota")) {
+          toast.error(`AI Service Busy: ${result.error}. Please try again in a few moments.`);
+        } else {
+          toast.error(`Could not generate questions: ${result.error}. Try selecting different concept tags or adjusting the topic.`);
+        }
         return;
       }
 
-      setAiGeneratedQuestions(generated);
+      if (result.questions.length === 0) {
+        toast.error(`No questions met the strict academic criteria for '${aiTopic}'. Try selecting specific concept chips below.`);
+        return;
+      }
+
+      setAiGeneratedQuestions(result.questions);
       setAiModalOpen(false);
       setAiReviewOpen(true);
-      toast.success(`Generated ${generated.length} validated, topic-accurate questions! Please review.`);
+
+      if (result.generatedCount < result.requestedCount) {
+        toast.warning(
+          `Generated ${result.generatedCount}/${result.requestedCount} questions. ` +
+          `${result.rejectedCount} questions were off-topic and removed. ` +
+          `You can add more questions manually in the review screen.`
+        );
+      } else {
+        toast.success(
+          `Generated ${result.generatedCount} validated, topic-accurate questions!` +
+          (result.rejectedCount > 0 ? ` (${result.rejectedCount} off-topic questions auto-removed)` : "")
+        );
+      }
     } catch (err: any) {
       console.error("AI Generation Error:", err);
-      toast.error("Failed to generate questions: " + err.message);
+      toast.error("Failed to generate questions: " + (err.message || "Unknown error"));
     } finally {
       setAiGenerating(false);
+      setAiGeneratingStage("");
     }
   };
+
 
   // AI Generation Step 2: Publish or Save Draft from Review Modal
   const handlePublishReviewedQuiz = async (status: "PUBLISHED" | "DRAFT") => {
@@ -411,7 +449,7 @@ export default function FacultyQuizzesPage() {
 
     setAiPublishing(true);
     try {
-      const title = `AI Diagnostic: ${aiTopic.trim()}`;
+      const title = aiQuizTitle.trim() || `AI Diagnostic: ${aiTopic.trim()}`;
       const { data: createdQuiz, error: qzErr } = await supabase
         .from("quizzes")
         .insert({
@@ -437,9 +475,10 @@ export default function FacultyQuizzesPage() {
         question: q.question,
         options: q.options,
         correct_option_index: q.correct_option_index,
-        topic: q.topic,
+        topic: q.topic || aiTopic.trim(),
         concept: q.concept,
         marks: q.marks,
+        difficulty: q.difficulty || aiDifficulty,
         explanation: q.explanation || null,
       }));
 
@@ -454,6 +493,7 @@ export default function FacultyQuizzesPage() {
 
       setAiReviewOpen(false);
       setAiTopic("");
+      setAiQuizTitle("");
       setAiConcepts("");
       setAiGeneratedQuestions([]);
       fetchQuizzesAndCohorts();
@@ -1071,6 +1111,17 @@ export default function FacultyQuizzesPage() {
               </div>
 
               <div className="space-y-1.5">
+                <Label htmlFor="ai-quiz-title" className="font-semibold">Quiz Title (optional)</Label>
+                <Input
+                  id="ai-quiz-title"
+                  value={aiQuizTitle}
+                  onChange={(e) => setAiQuizTitle(e.target.value)}
+                  placeholder={`AI Diagnostic: ${aiTopic || "Topic"}`}
+                  className="text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="ai-topic" className="font-semibold">Topic *</Label>
                 <Input
                   id="ai-topic"
@@ -1186,7 +1237,7 @@ export default function FacultyQuizzesPage() {
                 {aiGenerating ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
-                    <span>Crafting Questions with AI...</span>
+                    <span>{aiGeneratingStage || "Generating questions..."}</span>
                   </>
                 ) : (
                   <span>Generate Questions & Review</span>
@@ -1210,18 +1261,29 @@ export default function FacultyQuizzesPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-2 text-xs">
-              <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-indigo-900 dark:text-indigo-300">
-                    Topic: {aiTopic} · {aiGeneratedQuestions.length} Questions
+              <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-indigo-900 dark:text-indigo-300">
+                      Topic: {aiTopic} · {aiGeneratedQuestions.length} Questions
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Difficulty: {aiDifficulty} • Target Concepts: {aiConcepts || "Standard Curriculum"}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Difficulty: {aiDifficulty} • Target Concepts: {aiConcepts || "Standard Curriculum"}
-                  </div>
+                  <Badge variant="outline" className="bg-background text-xs">
+                    {aiDuration} mins
+                  </Badge>
                 </div>
-                <Badge variant="outline" className="bg-background text-xs">
-                  {aiDuration} mins
-                </Badge>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-muted-foreground uppercase">Quiz Title</Label>
+                  <Input
+                    value={aiQuizTitle}
+                    onChange={(e) => setAiQuizTitle(e.target.value)}
+                    placeholder={`AI Diagnostic: ${aiTopic}`}
+                    className="text-xs h-8"
+                  />
+                </div>
               </div>
 
               {/* Editable Question Cards */}

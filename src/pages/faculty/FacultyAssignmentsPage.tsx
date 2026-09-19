@@ -260,18 +260,23 @@ export default function FacultyAssignmentsPage() {
       if (insertError) throw insertError;
 
       // Also trigger reactive core update so student in-memory task listeners update instantly
-      synapse.createTeacherAssignment("c1", {
-        title: title.trim(),
-        description: description.trim(),
-        dueDate: new Date(deadlineDate).toLocaleDateString("en-US", {
+      synapse.createTeacherAssignment(
+        cohort?.classroom_id || "c1",
+        title.trim(),
+        description.trim(),
+        topic || "General",
+        new Date(deadlineDate).toLocaleDateString("en-US", {
           weekday: "short",
           month: "short",
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
         }),
-        maxScore: Number(maxMarks) || 20,
-      });
+        new Date(deadlineDate).toISOString(),
+        Number(maxMarks) || 20,
+        30,
+        "HIGH"
+      );
 
       toast.success(`Official assignment '${title}' published! Deadlines automatically synchronized to student tasks.`);
       setCreateOpen(false);

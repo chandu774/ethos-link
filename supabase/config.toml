@@ -1,4 +1,10 @@
-project_id = "ryucffvkpnhcpicvkavr"
+project_id = "ksvpugnibidxikuomidq"
 
 [functions.chat]
+verify_jwt = false
+
+[functions.quiz-generate]
+verify_jwt = false
+
+[functions.opportunity-discover]
 verify_jwt = false

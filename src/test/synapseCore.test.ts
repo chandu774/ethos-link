@@ -107,6 +107,23 @@ describe('SynapseCoreService', () => {
     expect(synapse.getState().overallAttendance).toBeGreaterThan(initialAttendance);
   });
 
+  it('should safely extract string title when createTeacherAssignment is called with an object', () => {
+    const asg = synapse.createTeacherAssignment('cls-dbms-3a', {
+      title: 'DBMS Project Part 1',
+      description: 'Design ER Diagram',
+      dueDate: 'Friday, 5:00 PM',
+      maxScore: 25,
+    } as any);
+
+    expect(typeof asg.title).toBe('string');
+    expect(asg.title).toBe('DBMS Project Part 1');
+
+    const syncedTask = synapse.getState().tasks.find(t => t.assignmentId === asg.id);
+    expect(syncedTask).toBeDefined();
+    expect(typeof syncedTask?.title).toBe('string');
+    expect(syncedTask?.title).toBe('DBMS Project Part 1');
+  });
+
   it('should toggle accessibility settings cleanly', () => {
     synapse.updateAccessibility({ signLanguageEnabled: true, liveCaptions: true });
     expect(synapse.getState().accessibility.signLanguageEnabled).toBe(true);

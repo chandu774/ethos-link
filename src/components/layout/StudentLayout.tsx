@@ -85,8 +85,8 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     return location.pathname === path;
   };
 
-  const pendingTasksCount = synapse.tasks?.filter((t) => t.status !== "completed").length || 0;
-  const gapCount = synapse.concepts?.filter((c) => c.status === "gap").length || 0;
+  const pendingTasksCount = (synapse.tasks || []).filter((t) => t && t.status !== "completed").length;
+  const gapCount = (synapse.concepts || []).filter((c) => c && c.status === "gap").length;
 
   const handleSpeakSummary = () => {
     const text = `Hello ${profile?.name || "Alex"}. Your learning health is ${synapse.learningHealth} percent. You have ${pendingTasksCount} pending tasks and ${gapCount} topic needing practice: Second Normal Form.`;

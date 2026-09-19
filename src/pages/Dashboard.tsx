@@ -102,12 +102,21 @@ export default function Dashboard() {
   });
 
   const studentName = profile?.name?.split(" ")[0] || "Alex";
-  const gaps = synapse.concepts.filter((c) => c.status === "gap");
-  const openTasks = dbTasks.length > 0
-    ? dbTasks.filter((t: any) => t.status !== "completed")
-    : synapse.tasks.filter((t) => t.status !== "completed");
-  const urgentTasks = openTasks.filter((t: any) => t.priority === "HIGH");
-  const nextDueTask = openTasks.find((t: any) => t.deadline) || openTasks[0];
+  const gaps = (synapse.concepts || []).filter((c) => c?.status === "gap");
+  const openTasks = (dbTasks && dbTasks.length > 0)
+    ? dbTasks.filter((t: any) => t?.status !== "completed")
+    : (synapse.tasks || []).filter((t) => t?.status !== "completed");
+  const urgentTasks = openTasks.filter((t: any) => t?.priority === "HIGH");
+  const nextDueTask = openTasks.find((t: any) => t?.deadline) || openTasks[0];
+
+  const getTaskTitle = (task: any): string => {
+    if (!task) return "No assignments pending";
+    if (typeof task.title === "string") return task.title;
+    if (typeof task.title === "object" && task.title !== null) {
+      return task.title.title || "Assignment";
+    }
+    return String(task.title || "Assignment");
+  };
 
   return (
     <StudentLayout>
@@ -188,7 +197,7 @@ export default function Dashboard() {
               </div>
               <Progress value={synapse.overallAttendance} className="mt-3 h-1.5" />
               <p className="mt-2 text-[11px] text-muted-foreground">
-                {synapse.missedClass.status === "completed" ? "All missed classes recovered" : "1 missed class recovery available"}
+                {synapse.missedClass?.status === "completed" ? "All missed classes recovered" : "1 missed class recovery available"}
               </p>
             </CardContent>
           </Card>
@@ -211,7 +220,7 @@ export default function Dashboard() {
                 )}
               </div>
               <p className="mt-3 text-xs text-foreground font-medium truncate">
-                {nextDueTask ? nextDueTask.title : "No assignments pending"}
+                {getTaskTitle(nextDueTask)}
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {nextDueTask?.deadline ? `Due: ${new Date(nextDueTask.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "All coursework caught up!"}
@@ -294,7 +303,7 @@ export default function Dashboard() {
         )}
 
         {/* Missed Class Recovery Banner (if active) */}
-        {synapse.missedClass.status !== "completed" && (
+        {synapse.missedClass && synapse.missedClass?.status !== "completed" && (
           <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-background to-orange-500/10 p-5 shadow-sm">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
@@ -302,21 +311,21 @@ export default function Dashboard() {
                   <Badge className="bg-amber-500 text-amber-950 font-semibold text-[10px]">
                     MISSED CLASS DETECTED
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{synapse.missedClass.date}</span>
+                  <span className="text-xs text-muted-foreground">{synapse.missedClass?.date}</span>
                 </div>
                 <h3 className="text-base font-bold text-foreground">
-                  {synapse.missedClass.courseCode}: {synapse.missedClass.courseName}
+                  {synapse.missedClass?.courseCode}: {synapse.missedClass?.courseName}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Topic: <strong className="text-foreground">{synapse.missedClass.topic}</strong>. Missed concepts:{" "}
-                  {synapse.missedClass.missedConcepts.join(", ")}.
+                  Topic: <strong className="text-foreground">{synapse.missedClass?.topic}</strong>. Missed concepts:{" "}
+                  {synapse.missedClass?.missedConcepts?.join(", ") || "None"}.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <div className="text-right hidden md:block">
                   <span className="block text-xs font-semibold text-foreground">Estimated catch-up</span>
-                  <span className="block text-xs text-muted-foreground">{synapse.missedClass.totalCatchupMinutes} minutes</span>
+                  <span className="block text-xs text-muted-foreground">{synapse.missedClass?.totalCatchupMinutes || 0} minutes</span>
                 </div>
                 <Button
                   size="sm"
@@ -360,7 +369,7 @@ export default function Dashboard() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            {synapse.recommendations.map((rec) => {
+            {(synapse.recommendations || []).map((rec) => {
               const isHigh = rec.priority === "HIGH";
               const isMedium = rec.priority === "MEDIUM";
 
@@ -578,7 +587,7 @@ export default function Dashboard() {
                     Detected Signals:
                   </h4>
                   <ul className="mt-2 space-y-1.5">
-                    {selectedWhyRec.whyDetails.signals.map((sig, idx) => (
+                    {(selectedWhyRec?.whyDetails?.signals || []).map((sig, idx) => (
                       <li key={idx} className="flex items-start gap-2 text-xs text-foreground">
                         <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                         <span>{sig}</span>
@@ -591,14 +600,14 @@ export default function Dashboard() {
                   <span className="block text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase">
                     Risk Factor
                   </span>
-                  <p className="mt-0.5 text-xs text-foreground/90">{selectedWhyRec.whyDetails.riskFactor}</p>
+                  <p className="mt-0.5 text-xs text-foreground/90">{selectedWhyRec?.whyDetails?.riskFactor || "Elevated learning gap detected"}</p>
                 </div>
 
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
                   <span className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
                     Projected Mastery Gain
                   </span>
-                  <p className="mt-0.5 text-xs text-foreground/90">{selectedWhyRec.whyDetails.gain}</p>
+                  <p className="mt-0.5 text-xs text-foreground/90">{selectedWhyRec?.whyDetails?.gain || "+15% Mastery Projected"}</p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">

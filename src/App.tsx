@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { StudentRoute } from "@/components/auth/StudentRoute";
 import { FacultyRoute } from "@/components/auth/FacultyRoute";
 import { AdminRoute } from "@/components/auth/AdminRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Lazy load pages for code splitting
 const Index = lazy(() => import("./pages/Index"));
@@ -25,6 +26,7 @@ const AdminStudentsPage = lazy(() => import("./pages/admin/AdminStudentsPage"));
 const AdminClassroomsPage = lazy(() => import("./pages/admin/AdminClassroomsPage"));
 const AdminClassroomDetailPage = lazy(() => import("./pages/admin/AdminClassroomDetailPage"));
 const AdminTeachingAssignmentsPage = lazy(() => import("./pages/admin/AdminTeachingAssignmentsPage"));
+const AdminOpportunitiesPage = lazy(() => import("./pages/admin/AdminOpportunitiesPage"));
 
 // Student Pages
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -73,6 +75,7 @@ const PageLoader = () => (
 function RoleRedirect({ studentPath, facultyPath }: { studentPath: string; facultyPath: string }) {
   const { role, loading } = useAuth();
   if (loading) return <PageLoader />;
+  if (role === "administrator") return <Navigate to="/admin/dashboard" replace />;
   return <Navigate to={role === "faculty" ? facultyPath : studentPath} replace />;
 }
 
@@ -84,8 +87,9 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
+            <ErrorBoundary>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
                 {/* Public Entry Points */}
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Auth />} />
@@ -416,6 +420,14 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/admin/opportunities"
+                  element={
+                    <AdminRoute>
+                      <AdminOpportunitiesPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
                   path="/admin/departments"
                   element={
                     <AdminRoute>
@@ -552,7 +564,8 @@ const App = () => (
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
-          </AuthProvider>
+          </ErrorBoundary>
+        </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
