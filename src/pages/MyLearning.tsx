@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,83 +13,174 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Compass,
   CheckCircle2,
   AlertCircle,
   TrendingUp,
   TrendingDown,
+  Minus,
   Sparkles,
   ArrowRight,
   BookOpen,
-  Video,
   Volume2,
   Play,
-  RotateCcw,
   FileCheck2,
-  HelpCircle,
-  Lightbulb,
+  Loader2,
+  FolderTree,
+  Clock,
+  GraduationCap,
 } from "lucide-react";
-import { useSynapse } from "@/hooks/useSynapse";
-import { ConceptMasteryItem } from "@/data/demoData";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import {
+  studentAnalyticsService,
+  ConceptMasteryData,
+  QuizMetrics,
+  StudentAcademicContext,
+  RecentActivityItem,
+} from "@/services/studentAnalyticsService";
 
 export default function MyLearning() {
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const synapse = useSynapse();
 
-  const [selectedConcept, setSelectedConcept] = useState<ConceptMasteryItem | null>(null);
+  const [selectedConcept, setSelectedConcept] = useState<ConceptMasteryData | null>(null);
   const [activeSubject, setActiveSubject] = useState<string>("all");
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // Auto-select concept if URL parameter is present (e.g. ?concept=c-2nf)
+  // Fetch real student academic context
+  const { data: context, isLoading: contextLoading } = useQuery<StudentAcademicContext | null>({
+    queryKey: ["student-academic-context", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      return await studentAnalyticsService.getStudentAcademicContext(user.id);
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch real quiz and concept mastery metrics
+  const { data: quizMetrics, isLoading: metricsLoading } = useQuery<QuizMetrics>({
+    queryKey: ["student-quiz-metrics", user?.id],
+    queryFn: async () => {
+      if (!user?.id) throw new Error("Not authenticated");
+      return await studentAnalyticsService.getStudentQuizMetrics(user.id);
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch real recent activity timeline
+  const { data: recentActivity = [] } = useQuery<RecentActivityItem[]>({
+    queryKey: ["student-recent-activity", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      return await studentAnalyticsService.getStudentRecentActivity(user.id);
+    },
+    enabled: !!user?.id,
+  });
+
+  const concepts = quizMetrics?.conceptMasteryList || [];
+
+  // Auto-select concept if URL parameter is present (e.g. ?concept=Two%20pointers)
   useEffect(() => {
     const conceptParam = searchParams.get("concept");
-    if (conceptParam) {
-      const found = synapse.concepts.find((c) => c.id === conceptParam);
+    if (conceptParam && concepts.length > 0) {
+      const found = concepts.find(
+        (c) => c.conceptName.toLowerCase() === conceptParam.toLowerCase()
+      );
       if (found) setSelectedConcept(found);
     }
-  }, [searchParams, synapse.concepts]);
+  }, [searchParams, concepts]);
 
-  const handleSpeakConcept = (concept: ConceptMasteryItem) => {
+  // Audio synthesis for concept explanation
+  const handleSpeakConcept = (concept: ConceptMasteryData) => {
     if (isSpeaking) {
-      synapse.stopSpeaking();
+      window.speechSynthesis?.cancel();
       setIsSpeaking(false);
       return;
     }
-    const text = `${concept.name}. Concept Mastery is currently ${concept.mastery} percent. ${concept.description}. Key rule: ${concept.rules.join(". ")}`;
+    if (!window.speechSynthesis) return;
+
+    const text = `${concept.conceptName} in ${concept.subject}, topic ${concept.topic}. Your current concept mastery is ${concept.masteryPercentage} percent, assessed across ${concept.totalQuestions} questions. Status: ${concept.status}.`;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
     setIsSpeaking(true);
-    synapse.speakText(text, () => setIsSpeaking(false));
+    window.speechSynthesis.speak(utterance);
   };
 
-  const filteredConcepts = synapse.concepts.filter((c) => {
+  const isLoading = contextLoading || metricsLoading;
+
+  // Filtered concepts based on subject
+  const filteredConcepts = concepts.filter((c) => {
     if (activeSubject === "all") return true;
-    if (activeSubject === "DBMS" && c.courseCode === "CS301") return true;
-    if (activeSubject === "OS" && c.courseCode === "CS302") return true;
-    return false;
+    return c.subject.toLowerCase() === activeSubject.toLowerCase();
   });
 
-  const gapConcepts = synapse.concepts.filter((c) => c.status === "gap");
-  const masteredConcepts = synapse.concepts.filter((c) => c.status === "mastered");
+  // Aggregate stats from real database concepts
+  const masteredConcepts = concepts.filter((c) => c.masteryPercentage >= 80);
+  const gapConcepts = concepts.filter((c) => c.masteryPercentage < 60);
+  const averageMastery =
+    concepts.length > 0
+      ? Math.round(concepts.reduce((acc, c) => acc + c.masteryPercentage, 0) / concepts.length)
+      : null;
+
+  // Group concepts by Subject -> Topic
+  interface GroupedTree {
+    subject: string;
+    topics: {
+      topic: string;
+      concepts: ConceptMasteryData[];
+    }[];
+  }
+
+  const groupedTree: GroupedTree[] = [];
+  filteredConcepts.forEach((c) => {
+    let sGroup = groupedTree.find((g) => g.subject.toLowerCase() === c.subject.toLowerCase());
+    if (!sGroup) {
+      sGroup = { subject: c.subject, topics: [] };
+      groupedTree.push(sGroup);
+    }
+    let tGroup = sGroup.topics.find((t) => t.topic.toLowerCase() === c.topic.toLowerCase());
+    if (!tGroup) {
+      tGroup = { topic: c.topic, concepts: [] };
+      sGroup.topics.push(tGroup);
+    }
+    tGroup.concepts.push(c);
+  });
+
+  // Unique subject list from enrolled subjects + assessed concepts
+  const availableSubjects: { id: string; name: string }[] = [];
+  if (context?.subjects) {
+    context.subjects.forEach((s) => {
+      if (!availableSubjects.find((as) => as.name.toLowerCase() === s.subjectName.toLowerCase())) {
+        availableSubjects.push({ id: s.subjectName, name: s.subjectName });
+      }
+    });
+  }
+  concepts.forEach((c) => {
+    if (!availableSubjects.find((as) => as.name.toLowerCase() === c.subject.toLowerCase())) {
+      availableSubjects.push({ id: c.subject, name: c.subject });
+    }
+  });
 
   return (
-    <AppLayout>
+    <StudentLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="border-primary/30 bg-primary/10 text-xs font-semibold text-primary">
-                Signature Feature
+                Curriculum Analytics
               </Badge>
-              <span className="text-xs text-muted-foreground">ï¿½ Deep Concept Analytics</span>
+              <span className="text-xs text-muted-foreground">• Authentic Assessment Telemetry</span>
             </div>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               Student Knowledge Map
             </h1>
             <p className="text-sm text-muted-foreground">
-              Concept-level understanding across your subjects. Click any concept to view notes, lecture timestamps, and targeted practice.
+              Objective concept-level mastery derived from your faculty-assigned assessments and quiz attempts.
             </p>
           </div>
 
@@ -100,256 +191,318 @@ export default function MyLearning() {
               onClick={() => navigate("/ai-tutor")}
             >
               <Sparkles className="h-4 w-4" />
-              <span>Ask AI About Gaps</span>
+              <span>Ask AI Tutor</span>
             </Button>
           </div>
         </div>
 
-        {/* Top Summary Row */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="border-border/50 bg-card/70">
-            <CardContent className="p-4">
-              <span className="text-xs text-muted-foreground">Mastered Concepts (&gt;80%)</span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-emerald-500">{masteredConcepts.length}</span>
-                <span className="text-xs text-muted-foreground">solid foundation</span>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">SQL, CPU Scheduling, Functional Dependencies</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-amber-500/30 bg-amber-500/5">
-            <CardContent className="p-4">
-              <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                Critical Learning Gaps (&lt;60%)
-              </span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-amber-500">{gapConcepts.length} detected</span>
-                <span className="text-xs text-muted-foreground">action needed</span>
-              </div>
-              <p className="mt-1 text-[11px] text-amber-600/90 dark:text-amber-400/90 font-medium">
-                2NF (46%) in DBMS, Virtual Memory (52%) in OS
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 bg-card/70">
-            <CardContent className="p-4">
-              <span className="text-xs text-muted-foreground">Average Concept Mastery</span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-foreground">73.8%</span>
-                <span className="text-xs text-emerald-500 font-medium">+4.2% this week</span>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">Continuously adapts after every quiz attempt</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Subject Filter Tabs */}
-        <div className="flex items-center gap-2 border-b border-border/50 pb-3">
-          {[
-            { id: "all", label: "All Subjects" },
-            { id: "DBMS", label: "CS301: Databases" },
-            { id: "OS", label: "CS302: Operating Systems" },
-          ].map((tab) => (
-            <Button
-              key={tab.id}
-              variant={activeSubject === tab.id ? "default" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setActiveSubject(tab.id)}
-            >
-              {tab.label}
-            </Button>
-          ))}
-        </div>
-
-        {/* Visual Concept Tree / Cards */}
-        <div className="space-y-6">
-          {/* DBMS Section */}
-          {(activeSubject === "all" || activeSubject === "DBMS") && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-foreground">
-                    CS301: Database Management Systems
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Relational Model, Normalization & Query Processing
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="mt-2 text-xs text-muted-foreground">Loading curriculum knowledge map...</p>
+          </div>
+        ) : (
+          <>
+            {/* Top Summary Row */}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card className="border-border/50 bg-card/70">
+                <CardContent className="p-4">
+                  <span className="text-xs text-muted-foreground">Mastered Concepts (&ge;80%)</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-emerald-500">{masteredConcepts.length}</span>
+                    <span className="text-xs text-muted-foreground">of {concepts.length} assessed</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {masteredConcepts.length > 0
+                      ? masteredConcepts.map((m) => m.conceptName).slice(0, 3).join(", ")
+                      : "Assessments require &ge;80% accuracy for mastery"}
                   </p>
+                </CardContent>
+              </Card>
+
+              <Card className={cn(
+                "border-border/50 bg-card/70",
+                gapConcepts.length > 0 && "border-amber-500/30 bg-amber-500/5"
+              )}>
+                <CardContent className="p-4">
+                  <span className={cn(
+                    "text-xs font-semibold",
+                    gapConcepts.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                  )}>
+                    Critical Learning Gaps (&lt;60%)
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className={cn(
+                      "text-2xl font-bold",
+                      gapConcepts.length > 0 ? "text-amber-500" : "text-foreground"
+                    )}>
+                      {gapConcepts.length} detected
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {gapConcepts.length > 0 ? "revision suggested" : "all on track"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground truncate">
+                    {gapConcepts.length > 0
+                      ? gapConcepts.map((g) => `${g.conceptName} (${g.masteryPercentage}%)`).join(", ")
+                      : "No concepts currently scoring below 60%"}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/50 bg-card/70">
+                <CardContent className="p-4">
+                  <span className="text-xs text-muted-foreground">Average Concept Mastery</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-foreground">
+                      {averageMastery !== null ? `${averageMastery}%` : "—"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {quizMetrics?.totalAttempts || 0} quiz attempt{(quizMetrics?.totalAttempts || 0) === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Continuously recalculated after every quiz attempt
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Dynamic Subject Filter Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto border-b border-border/50 pb-3">
+              <Button
+                variant={activeSubject === "all" ? "default" : "outline"}
+                size="sm"
+                className="h-8 text-xs shrink-0"
+                onClick={() => setActiveSubject("all")}
+              >
+                All Enrolled Subjects ({concepts.length})
+              </Button>
+              {availableSubjects.map((sub) => {
+                const count = concepts.filter(
+                  (c) => c.subject.toLowerCase() === sub.name.toLowerCase()
+                ).length;
+                return (
+                  <Button
+                    key={sub.id}
+                    variant={activeSubject.toLowerCase() === sub.name.toLowerCase() ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs shrink-0"
+                    onClick={() => setActiveSubject(sub.name)}
+                  >
+                    {sub.name} {count > 0 ? `(${count})` : ""}
+                  </Button>
+                );
+              })}
+            </div>
+
+            {/* Concept Tree / Cards */}
+            {concepts.length === 0 ? (
+              <Card className="border-dashed p-12 text-center bg-muted/20">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-4">
+                  <FileCheck2 className="h-7 w-7" />
                 </div>
-                <Badge variant="outline" className="border-primary/30 text-xs">
-                  Overall: 71%
-                </Badge>
-              </div>
+                <h3 className="text-lg font-bold text-foreground">No Diagnostic Data Yet</h3>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1 mb-6">
+                  You haven't completed any faculty quizzes yet. Once you take quizzes in {context?.classroomName || "your classroom"}, your Subject &rarr; Topic &rarr; Concept mastery tree will appear here.
+                </p>
+                <Button
+                  className="bg-primary text-primary-foreground font-semibold"
+                  onClick={() => navigate("/student/quizzes")}
+                >
+                  Explore Available Quizzes
+                </Button>
+              </Card>
+            ) : filteredConcepts.length === 0 ? (
+              <Card className="border-dashed p-8 text-center bg-muted/20">
+                <p className="text-xs text-muted-foreground">
+                  No concept assessments recorded yet for <strong>{activeSubject}</strong>. Complete quizzes in this subject to build mastery telemetry.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                {groupedTree.map((sg) => (
+                  <div key={sg.subject} className="space-y-4">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-5 w-5 text-primary" />
+                        <div>
+                          <h3 className="font-bold text-base text-foreground">{sg.subject}</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Classroom Curriculum Concepts
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        {sg.topics.reduce((acc, t) => acc + t.concepts.length, 0)} Concepts
+                      </Badge>
+                    </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {synapse.concepts
-                  .filter((c) => c.courseCode === "CS301")
-                  .map((concept) => {
-                    const isGap = concept.status === "gap";
-                    const isMastered = concept.status === "mastered";
-
-                    return (
-                      <Card
-                        key={concept.id}
-                        className={cn(
-                          "cursor-pointer border transition-all duration-200 hover:-translate-y-1 hover:shadow-md",
-                          isGap
-                            ? "border-amber-500/50 bg-amber-500/10 shadow-sm shadow-amber-500/10"
-                            : isMastered
-                            ? "border-emerald-500/30 bg-card/80"
-                            : "border-border/60 bg-card/80"
-                        )}
-                        onClick={() => setSelectedConcept(concept)}
-                      >
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-sm font-bold text-foreground">{concept.name}</span>
-                              </div>
-                              <span className="text-[11px] text-muted-foreground">{concept.category}</span>
-                            </div>
-
-                            <Badge
-                              variant={isGap ? "destructive" : isMastered ? "default" : "secondary"}
-                              className={cn(
-                                "text-[10px] uppercase font-bold",
-                                isMastered && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-0"
-                              )}
-                            >
-                              {isGap ? "GAP" : isMastered ? "MASTERED" : "IN PROGRESS"}
-                            </Badge>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-foreground">{concept.mastery}% Mastery</span>
-                              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                {concept.trend === "up" ? (
-                                  <TrendingUp className="h-3 w-3 text-emerald-500" />
-                                ) : (
-                                  <TrendingDown className="h-3 w-3 text-destructive" />
-                                )}
-                                {concept.practiceCount} attempts
+                    <div className="space-y-4">
+                      {sg.topics.map((tg) => (
+                        <div
+                          key={tg.topic}
+                          className="rounded-xl border border-border/50 bg-background/50 p-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-primary" />
+                              <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                                Topic: {tg.topic}
                               </span>
                             </div>
-                            <Progress
-                              value={concept.mastery}
-                              className={cn(
-                                "mt-1.5 h-2",
-                                isGap && "[&>div]:bg-amber-500",
-                                isMastered && "[&>div]:bg-emerald-500"
-                              )}
-                            />
+                            <span className="text-[11px] text-muted-foreground font-medium">
+                              {tg.concepts.length} concept{tg.concepts.length === 1 ? "" : "s"}
+                            </span>
                           </div>
 
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {concept.description}
-                          </p>
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {tg.concepts.map((concept) => {
+                              const isGap = concept.masteryPercentage < 60;
+                              const isMastered = concept.masteryPercentage >= 80;
 
-                          <div className="flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-primary font-medium">
-                            <span>Inspect Concept & Lecture Jump</span>
-                            <ArrowRight className="h-3.5 w-3.5" />
+                              return (
+                                <Card
+                                  key={concept.conceptName}
+                                  className={cn(
+                                    "cursor-pointer border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                                    isGap
+                                      ? "border-amber-500/50 bg-amber-500/10 shadow-sm shadow-amber-500/10"
+                                      : isMastered
+                                      ? "border-emerald-500/30 bg-card/80"
+                                      : "border-border/60 bg-card/80"
+                                  )}
+                                  onClick={() => setSelectedConcept(concept)}
+                                >
+                                  <CardContent className="p-4 space-y-3">
+                                    <div className="flex items-start justify-between">
+                                      <div className="space-y-0.5">
+                                        <h4 className="text-sm font-bold text-foreground">
+                                          {concept.conceptName}
+                                        </h4>
+                                        <span className="text-[11px] text-muted-foreground">
+                                          {concept.topic}
+                                        </span>
+                                      </div>
+
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "text-[10px] uppercase font-bold",
+                                          isMastered && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-0",
+                                          isGap && "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-0"
+                                        )}
+                                      >
+                                        {concept.status}
+                                      </Badge>
+                                    </div>
+
+                                    <div>
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-semibold text-foreground">
+                                          {concept.masteryPercentage}% Mastery
+                                        </span>
+                                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                          {concept.trend === "improving" ? (
+                                            <TrendingUp className="h-3 w-3 text-emerald-500" />
+                                          ) : concept.trend === "declining" ? (
+                                            <TrendingDown className="h-3 w-3 text-destructive" />
+                                          ) : (
+                                            <Minus className="h-3 w-3 text-muted-foreground" />
+                                          )}
+                                          {concept.correctCount}/{concept.totalQuestions} correct
+                                        </span>
+                                      </div>
+                                      <Progress
+                                        value={concept.masteryPercentage}
+                                        className={cn(
+                                          "mt-1.5 h-1.5",
+                                          isGap && "[&>div]:bg-amber-500",
+                                          isMastered && "[&>div]:bg-emerald-500"
+                                        )}
+                                      />
+                                    </div>
+
+                                    <div className="flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-primary font-medium">
+                                      <span>Inspect Concept & Interventions</span>
+                                      <ArrowRight className="h-3.5 w-3.5" />
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
                           </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Operating Systems Section */}
-          {(activeSubject === "all" || activeSubject === "OS") && (
-            <div className="space-y-3 pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-foreground">
-                    CS302: Operating Systems
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Process Scheduling, Memory Hierarchy & Synchronization
-                  </p>
+            {/* Real Chronological Learning Activity Timeline */}
+            <Card className="border-border/60 bg-card/80 shadow-sm">
+              <CardHeader className="pb-3 border-b border-border/40">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <span>Recent Learning Activity Timeline</span>
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Chronological log of submitted assessments, assignments, and class attendance
+                    </CardDescription>
+                  </div>
                 </div>
-                <Badge variant="outline" className="border-primary/30 text-xs">
-                  Overall: 76%
-                </Badge>
-              </div>
+              </CardHeader>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {synapse.concepts
-                  .filter((c) => c.courseCode === "CS302")
-                  .map((concept) => {
-                    const isGap = concept.status === "gap";
-                    const isMastered = concept.status === "mastered";
-
-                    return (
-                      <Card
-                        key={concept.id}
-                        className={cn(
-                          "cursor-pointer border transition-all duration-200 hover:-translate-y-1 hover:shadow-md",
-                          isGap
-                            ? "border-amber-500/50 bg-amber-500/10 shadow-sm shadow-amber-500/10"
-                            : isMastered
-                            ? "border-emerald-500/30 bg-card/80"
-                            : "border-border/60 bg-card/80"
-                        )}
-                        onClick={() => setSelectedConcept(concept)}
+              <CardContent className="p-4">
+                {recentActivity.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    No learning events recorded yet. Complete quizzes or submit coursework to view activity logs.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {recentActivity.map((act) => (
+                      <div
+                        key={act.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-border/40 bg-background/50 text-xs hover:bg-background/80 transition-colors"
                       >
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-sm font-bold text-foreground">{concept.name}</span>
-                              <span className="block text-[11px] text-muted-foreground">{concept.category}</span>
-                            </div>
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-foreground">
+                            {act.title}
+                          </span>
+                          <div className="text-[11px] text-muted-foreground">
+                            {act.subject} &bull; {act.description}
+                          </div>
+                        </div>
 
-                            <Badge
-                              variant={isGap ? "destructive" : isMastered ? "default" : "secondary"}
-                              className={cn(
-                                "text-[10px] uppercase font-bold",
-                                isMastered && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-0"
-                              )}
-                            >
-                              {isGap ? "GAP" : isMastered ? "MASTERED" : "IN PROGRESS"}
+                        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+                          {act.scoreOrStatus && (
+                            <Badge variant="outline" className="text-xs font-mono font-bold">
+                              {act.scoreOrStatus}
                             </Badge>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-foreground">{concept.mastery}% Mastery</span>
-                              <span className="text-[11px] text-muted-foreground">{concept.practiceCount} attempts</span>
-                            </div>
-                            <Progress
-                              value={concept.mastery}
-                              className={cn(
-                                "mt-1.5 h-2",
-                                isGap && "[&>div]:bg-amber-500",
-                                isMastered && "[&>div]:bg-emerald-500"
-                              )}
-                            />
-                          </div>
-
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {concept.description}
-                          </p>
-
-                          <div className="flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-primary font-medium">
-                            <span>Inspect Concept</span>
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-        </div>
+                          )}
+                          <span className="text-[11px] text-muted-foreground">
+                            {new Date(act.timestamp).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
-      {/* RICH CONCEPT DETAIL DRAWER */}
+      {/* Concept Detail Drawer (Sheet) */}
       <Sheet open={!!selectedConcept} onOpenChange={(open) => !open && setSelectedConcept(null)}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {selectedConcept && (
@@ -357,7 +510,7 @@ export default function MyLearning() {
               <SheetHeader>
                 <div className="flex items-center justify-between gap-2">
                   <Badge variant="outline" className="border-primary/40 bg-primary/10 text-xs font-semibold text-primary">
-                    {selectedConcept.courseCode}
+                    {selectedConcept.subject}
                   </Badge>
                   <Button
                     variant="ghost"
@@ -369,9 +522,9 @@ export default function MyLearning() {
                     <span>{isSpeaking ? "Stop Audio" : "Listen (TTS)"}</span>
                   </Button>
                 </div>
-                <SheetTitle className="text-xl font-bold">{selectedConcept.name}</SheetTitle>
+                <SheetTitle className="text-xl font-bold">{selectedConcept.conceptName}</SheetTitle>
                 <SheetDescription className="text-xs">
-                  Category: {selectedConcept.category} ï¿½ Current Mastery: {selectedConcept.mastery}%
+                  Topic: {selectedConcept.topic} &bull; Accuracy: {selectedConcept.masteryPercentage}% ({selectedConcept.correctCount}/{selectedConcept.totalQuestions} correct)
                 </SheetDescription>
               </SheetHeader>
 
@@ -379,91 +532,82 @@ export default function MyLearning() {
               <div
                 className={cn(
                   "rounded-xl border p-3",
-                  selectedConcept.status === "gap"
+                  selectedConcept.masteryPercentage < 60
                     ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
                     : "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
                 )}
               >
                 <div className="flex items-center gap-2">
-                  {selectedConcept.status === "gap" ? (
+                  {selectedConcept.masteryPercentage < 60 ? (
                     <AlertCircle className="h-4 w-4 text-amber-500" />
                   ) : (
                     <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                   )}
                   <span className="text-xs font-bold uppercase">
-                    {selectedConcept.status === "gap"
-                      ? "Attention Required: Academic Gap Detected"
+                    {selectedConcept.masteryPercentage < 60
+                      ? "Attention Required: Concept Gap Identified"
                       : "Concept Mastery Verified"}
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed opacity-90">
-                  {selectedConcept.status === "gap"
-                    ? "Your score on this concept is currently below 60%. Reviewing the lecture timestamp and attempting 3 practice questions will close this gap."
-                    : "You consistently perform well on this topic across quizzes and homework."}
+                  {selectedConcept.masteryPercentage < 60
+                    ? `Your assessed accuracy in ${selectedConcept.conceptName} is below 60%. Reviewing lecture materials and attempting targeted practice questions will help close this gap.`
+                    : `You have demonstrated strong performance in ${selectedConcept.conceptName} across your quiz evaluations.`}
                 </p>
               </div>
 
-              {/* Deep Explanation */}
+              {/* Diagnostic Assessment Breakdown */}
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Core Concept Explanation
+                  Diagnostic Performance Breakdown
                 </h4>
-                <p className="text-xs text-foreground leading-relaxed bg-muted/30 p-3 rounded-xl border border-border/40">
-                  {selectedConcept.description}
-                </p>
-              </div>
-
-              {/* Governing Principles & Rules */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Key Invariants & Rules
-                </h4>
-                <div className="space-y-2">
-                  {selectedConcept.rules.map((rule, idx) => (
-                    <div key={idx} className="flex items-start gap-2 text-xs text-foreground bg-background/80 p-2 rounded-lg border border-border/40">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                        {idx + 1}
-                      </span>
-                      <span>{rule}</span>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-border/50 bg-background/50 p-2.5">
+                    <span className="block text-[11px] text-muted-foreground">Mastery</span>
+                    <span className="block text-sm font-bold text-foreground">{selectedConcept.masteryPercentage}%</span>
+                  </div>
+                  <div className="rounded-xl border border-border/50 bg-background/50 p-2.5">
+                    <span className="block text-[11px] text-muted-foreground">Correct</span>
+                    <span className="block text-sm font-bold text-emerald-500">{selectedConcept.correctCount}</span>
+                  </div>
+                  <div className="rounded-xl border border-border/50 bg-background/50 p-2.5">
+                    <span className="block text-[11px] text-muted-foreground">Incorrect</span>
+                    <span className="block text-sm font-bold text-destructive">{selectedConcept.incorrectCount}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Interactive Actions Grid */}
+              {/* Action Interventions */}
               <div className="space-y-2.5 pt-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Immediate Interventions
+                  Immediate Learning Interventions
                 </h4>
 
-                {/* Jump to Lecture */}
-                {selectedConcept.lectureTimestamp && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-between h-auto py-2.5 border-primary/30 hover:bg-primary/5"
-                    onClick={() => {
-                      const ts = selectedConcept.lectureTimestamp!;
-                      navigate(`/lectures/${ts.lectureId}?t=${ts.seconds}`);
-                    }}
-                  >
-                    <div className="flex items-center gap-2.5 text-left">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-                        <Play className="h-4 w-4 fill-current" />
-                      </div>
-                      <div>
-                        <span className="block text-xs font-semibold text-foreground">Jump to Lecture Segment</span>
-                        <span className="block text-[11px] text-muted-foreground">Timestamp: {selectedConcept.lectureTimestamp.time} (Covers Partial Dependencies)</span>
-                      </div>
+                {/* Jump to Topic Lecture */}
+                <Button
+                  variant="outline"
+                  className="w-full justify-between h-auto py-2.5 border-primary/30 hover:bg-primary/5"
+                  onClick={() => {
+                    navigate(`/student/lectures?topic=${encodeURIComponent(selectedConcept.topic)}`);
+                  }}
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                      <Play className="h-4 w-4 fill-current" />
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
+                    <div>
+                      <span className="block text-xs font-semibold text-foreground">Find Faculty Lecture</span>
+                      <span className="block text-[11px] text-muted-foreground">Search videos covering {selectedConcept.topic}</span>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </Button>
 
-                {/* Take Targeted Practice Quiz */}
+                {/* Take Practice Quiz */}
                 <Button
                   className="w-full justify-between h-auto py-2.5 bg-primary text-primary-foreground font-medium"
                   onClick={() => {
-                    navigate("/student/quizzes");
+                    navigate(`/student/quizzes?concept=${encodeURIComponent(selectedConcept.conceptName)}`);
                   }}
                 >
                   <div className="flex items-center gap-2.5 text-left">
@@ -471,8 +615,8 @@ export default function MyLearning() {
                       <FileCheck2 className="h-4 w-4" />
                     </div>
                     <div>
-                      <span className="block text-xs font-semibold">Open Classroom Assessments</span>
-                      <span className="block text-[11px] text-primary-foreground/80">Quizzes and checkpoints published by your faculty</span>
+                      <span className="block text-xs font-semibold">Take Practice Quiz</span>
+                      <span className="block text-[11px] text-primary-foreground/80">Reinforce {selectedConcept.conceptName}</span>
                     </div>
                   </div>
                   <ArrowRight className="h-4 w-4" />
@@ -483,7 +627,7 @@ export default function MyLearning() {
                   variant="outline"
                   className="w-full justify-between h-auto py-2.5"
                   onClick={() => {
-                    navigate(`/ai-tutor?concept=${encodeURIComponent(selectedConcept.name)}`);
+                    navigate(`/ai-tutor?concept=${encodeURIComponent(selectedConcept.conceptName)}`);
                   }}
                 >
                   <div className="flex items-center gap-2.5 text-left">
@@ -491,8 +635,8 @@ export default function MyLearning() {
                       <Sparkles className="h-4 w-4" />
                     </div>
                     <div>
-                      <span className="block text-xs font-semibold text-foreground">Ask Contextual AI Tutor</span>
-                      <span className="block text-[11px] text-muted-foreground">Get a Socratic explanation tailored to this concept</span>
+                      <span className="block text-xs font-semibold text-foreground">Ask AI Tutor</span>
+                      <span className="block text-[11px] text-muted-foreground">Get Socratic coaching on {selectedConcept.conceptName}</span>
                     </div>
                   </div>
                   <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -502,7 +646,6 @@ export default function MyLearning() {
           )}
         </SheetContent>
       </Sheet>
-    </AppLayout>
+    </StudentLayout>
   );
 }
-
