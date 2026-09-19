@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Users,
   Building2,
-  GraduationCap,
   Settings,
   LogOut,
   Moon,
@@ -13,6 +12,7 @@ import {
   Menu,
   Shield,
   KeyRound,
+  BookOpen,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -28,10 +28,9 @@ interface AdminLayoutProps {
 
 const adminNavItems = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/admin/faculty", label: "Faculty Management", icon: Users, badge: "Create / Provision" },
-  { to: "/admin/departments", label: "Departments", icon: Building2 },
-  { to: "/admin/students", label: "All Students", icon: GraduationCap },
-  { to: "/admin/settings", label: "System & Roles", icon: Settings },
+  { to: "/admin/faculty", label: "Faculty", icon: Users },
+  { to: "/admin/classrooms", label: "Classrooms", icon: Building2 },
+  { to: "/admin/teaching-assignments", label: "Teaching Assignments", icon: BookOpen },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {

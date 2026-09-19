@@ -1,36 +1,59 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ShieldAlert, Lock, Mail, Loader2, ArrowRight } from "lucide-react";
+import { ShieldAlert, Lock, UserCheck, Loader2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { signIn, loading: authLoading } = useAuth();
-  const [email, setEmail] = useState("");
+  const { loginWithIdentifier, signOut, user, role, loading: authLoading } = useAuth();
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // If already authenticated as administrator, navigate to admin dashboard
+  useEffect(() => {
+    if (user && !authLoading) {
+      if (role === "administrator") {
+        navigate("/admin/dashboard", { replace: true });
+      }
+    }
+  }, [user, role, authLoading, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error("Please provide both email and password");
+    const cleanId = identifier.trim();
+    if (!cleanId || !password) {
+      toast.error("Please provide both Admin ID / Email and password");
       return;
     }
 
     setLoading(true);
     try {
-      const { error } = await signIn(email, password);
+      const { error, role: loggedRole } = await loginWithIdentifier(cleanId, password);
       if (error) {
-        toast.error("Authentication failed: " + error.message);
+        if (error.message.includes("Invalid login credentials") || error.message.includes("invalid_grant")) {
+          toast.error("Invalid Admin ID or Password. Please check your credentials.");
+        } else {
+          toast.error("Authentication failed: " + error.message);
+        }
         return;
       }
+
+      if (loggedRole !== "administrator") {
+        await signOut();
+        toast.error("Access denied. This portal is restricted to Central Administrators.");
+        return;
+      }
+
       toast.success("Welcome back, Administrator");
-      navigate("/admin/dashboard");
+      navigate("/admin/dashboard", { replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "An unexpected error occurred during sign in.");
     } finally {
       setLoading(false);
     }
@@ -55,23 +78,24 @@ export default function AdminLogin() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-white">Administrator Sign In</CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Enter official institutional administrator credentials.
+              Enter official institutional administrator credentials (Admin ID or Email).
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="admin-email" className="text-xs text-slate-300">Admin Email</Label>
+                <Label htmlFor="admin-identifier" className="text-xs text-slate-300">Admin ID or Email</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <UserCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
-                    id="admin-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@synapse.edu"
+                    id="admin-identifier"
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="ADMIN001 or admin@synapse.edu"
                     className="pl-9 bg-slate-950/60 border-slate-800 text-white placeholder:text-slate-600 text-sm"
                     required
+                    autoComplete="username"
                   />
                 </div>
               </div>
@@ -88,6 +112,7 @@ export default function AdminLogin() {
                     placeholder="••••••••"
                     className="pl-9 bg-slate-950/60 border-slate-800 text-white placeholder:text-slate-600 text-sm"
                     required
+                    autoComplete="current-password"
                   />
                 </div>
               </div>
@@ -110,7 +135,7 @@ export default function AdminLogin() {
 
         {/* Helper Note */}
         <div className="text-center text-[11px] text-slate-500">
-          Faculty or Student? Visit <a href="/student/login" className="text-slate-400 hover:underline">Student Portal</a> or <a href="/faculty/login" className="text-slate-400 hover:underline">Faculty Portal</a>.
+          Faculty or Student? Visit <a href="/login" className="text-slate-400 hover:underline">Unified Portal</a>.
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-export interface DemoChapter {
+ï»¿export interface DemoChapter {
   id: string;
   timestamp: string;
   seconds: number;
@@ -534,7 +534,7 @@ export const DEMO_RECOMMENDATIONS: DemoRecommendation[] = [
   {
     id: "rec-1",
     courseCode: "CS301",
-    title: "DBMS — Review 2NF Concepts",
+    title: "DBMS â€” Review 2NF Concepts",
     type: "review",
     priority: "HIGH",
     estimatedMinutes: 20,
@@ -576,7 +576,7 @@ export const DEMO_RECOMMENDATIONS: DemoRecommendation[] = [
   {
     id: "rec-3",
     courseCode: "CS302",
-    title: "OS — Recover Missed Virtual Memory Lecture",
+    title: "OS â€” Recover Missed Virtual Memory Lecture",
     type: "recover_lecture",
     priority: "MEDIUM",
     estimatedMinutes: 15,
@@ -597,7 +597,7 @@ export const DEMO_RECOMMENDATIONS: DemoRecommendation[] = [
   {
     id: "rec-4",
     courseCode: "CS303",
-    title: "CN — Subnetting & CIDR Practice Checkpoint",
+    title: "CN â€” Subnetting & CIDR Practice Checkpoint",
     type: "practice",
     priority: "LOW",
     estimatedMinutes: 15,
@@ -811,7 +811,7 @@ export const DEMO_CLASSROOMS: Classroom[] = [
     teacherName: 'Dr. Aris Rao',
     description: 'Relational database schema decomposition, functional dependencies, normal forms (1NF through BCNF), and transaction concurrency control.',
     studentsCount: 62,
-    assignmentsCount: 8,
+    assignmentsCount: 0,
     upcomingCount: 3,
     averagePerformance: 76,
     color: 'from-blue-600 via-indigo-600 to-indigo-800',
@@ -845,52 +845,7 @@ export const DEMO_CLASSROOMS: Classroom[] = [
         type: 'resource',
       },
     ],
-    assignments: [
-      {
-        id: 'asg-dbms-3',
-        classroomId: 'cls-dbms-3a',
-        title: 'DBMS Assignment 3: Relational Decomposition',
-        description: 'Decompose relation R(A, B, C, D, E) with functional dependencies into 2NF and 3NF ensuring lossless join and dependency preservation.',
-        topic: 'Normalization',
-        dueDate: 'Tomorrow',
-        dueDateTime: 'Monday, 11:59 PM',
-        maxMarks: 20,
-        estimatedMinutes: 30,
-        priority: 'HIGH',
-        status: 'assigned',
-      },
-      {
-        id: 'asg-dbms-2',
-        classroomId: 'cls-dbms-3a',
-        title: 'SQL Complex Joins & Subqueries',
-        description: 'Write optimized queries calculating departmental performance and recursive CTE expressions.',
-        topic: 'SQL',
-        dueDate: 'Last Week',
-        dueDateTime: 'Completed',
-        maxMarks: 20,
-        estimatedMinutes: 45,
-        priority: 'MEDIUM',
-        status: 'graded',
-        submission: {
-          submittedAt: '5 days ago',
-          marksObtained: 18,
-          feedback: 'Excellent execution on multi-table joins. Watch out for NULL handling in outer joins.',
-        },
-      },
-      {
-        id: 'asg-dbms-4',
-        classroomId: 'cls-dbms-3a',
-        title: 'Transaction Schedules & Serializability',
-        description: 'Analyze conflict serializability for concurrent schedules using precedence graphs.',
-        topic: 'Transactions',
-        dueDate: 'In 5 days',
-        dueDateTime: 'Next Friday',
-        maxMarks: 25,
-        estimatedMinutes: 40,
-        priority: 'MEDIUM',
-        status: 'assigned',
-      },
-    ],
+    assignments: [],
     resources: [
       {
         id: 'res-1',
@@ -940,7 +895,7 @@ export const DEMO_CLASSROOMS: Classroom[] = [
     teacherName: 'Prof. Sarah Jenkins',
     description: 'Process scheduling, deadlocks, virtual memory management, TLB address translation, and file system architecture.',
     studentsCount: 58,
-    assignmentsCount: 6,
+    assignmentsCount: 0,
     upcomingCount: 2,
     averagePerformance: 81,
     color: 'from-emerald-600 via-teal-600 to-teal-800',
@@ -956,21 +911,7 @@ export const DEMO_CLASSROOMS: Classroom[] = [
         type: 'announcement',
       },
     ],
-    assignments: [
-      {
-        id: 'asg-os-1',
-        classroomId: 'cls-os-3a',
-        title: 'Virtual Memory Page Replacement Simulation',
-        description: 'Implement LRU, FIFO, and Optimal page replacement algorithms in C++.',
-        topic: 'Virtual Memory',
-        dueDate: 'In 4 days',
-        dueDateTime: 'Thursday, 5:00 PM',
-        maxMarks: 25,
-        estimatedMinutes: 60,
-        priority: 'MEDIUM',
-        status: 'assigned',
-      },
-    ],
+    assignments: [],
     resources: [
       {
         id: 'res-os-1',
@@ -996,7 +937,7 @@ export const DEMO_CLASSROOMS: Classroom[] = [
     teacherName: 'Dr. Vikram Patel',
     description: 'OSI and TCP/IP protocol stacks, sliding window flow control, congestion control, and subnetting.',
     studentsCount: 60,
-    assignmentsCount: 5,
+    assignmentsCount: 0,
     upcomingCount: 1,
     averagePerformance: 85,
     color: 'from-purple-600 via-violet-600 to-indigo-700',

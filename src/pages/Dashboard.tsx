@@ -32,20 +32,82 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSynapse } from "@/hooks/useSynapse";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import { DemoRecommendation } from "@/data/demoData";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const synapse = useSynapse();
   const navigate = useNavigate();
 
   const [selectedWhyRec, setSelectedWhyRec] = useState<DemoRecommendation | null>(null);
 
+  // Fetch real database tasks
+  const { data: dbTasks = [] } = useQuery({
+    queryKey: ["student-dashboard-tasks", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data } = await supabase
+        .from("tasks")
+        .select("*")
+        .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch student classroom cohort
+  const { data: studentCohort } = useQuery({
+    queryKey: ["student-classroom-cohort", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data: memberData } = await supabase
+        .from("classroom_members")
+        .select(`
+          classroom:classrooms!classroom_members_classroom_id_fkey(
+            id,
+            name,
+            course,
+            branch,
+            year,
+            section,
+            academic_year
+          )
+        `)
+        .eq("student_id", user.id)
+        .maybeSingle();
+
+      if (!memberData?.classroom) return null;
+      const cls = memberData.classroom as any;
+
+      const { data: teachingData } = await supabase
+        .from("teaching_assignments")
+        .select(`
+          id,
+          subject_name,
+          subject_code,
+          faculty:profiles!teaching_assignments_faculty_id_fkey(name)
+        `)
+        .eq("classroom_id", cls.id);
+
+      return {
+        ...cls,
+        subjects: teachingData || [],
+      };
+    },
+    enabled: !!user?.id,
+  });
+
   const studentName = profile?.name?.split(" ")[0] || "Alex";
   const gaps = synapse.concepts.filter((c) => c.status === "gap");
-  const openTasks = synapse.tasks.filter((t) => t.status !== "completed");
-  const urgentTasks = openTasks.filter((t) => t.priority === "HIGH");
+  const openTasks = dbTasks.length > 0
+    ? dbTasks.filter((t: any) => t.status !== "completed")
+    : synapse.tasks.filter((t) => t.status !== "completed");
+  const urgentTasks = openTasks.filter((t: any) => t.priority === "HIGH");
+  const nextDueTask = openTasks.find((t: any) => t.deadline) || openTasks[0];
 
   return (
     <StudentLayout>
@@ -148,8 +210,12 @@ export default function Dashboard() {
                   </Badge>
                 )}
               </div>
-              <p className="mt-3 text-xs text-foreground font-medium">DBMS Assignment 3 due tomorrow</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">Workload: ~50 mins remaining this week</p>
+              <p className="mt-3 text-xs text-foreground font-medium truncate">
+                {nextDueTask ? nextDueTask.title : "No assignments pending"}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {nextDueTask?.deadline ? `Due: ${new Date(nextDueTask.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "All coursework caught up!"}
+              </p>
             </CardContent>
           </Card>
 
@@ -180,6 +246,52 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* My Classroom Cohort Card */}
+        {studentCohort && (
+          <Card className="border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 via-background to-card shadow-sm">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-indigo-600 text-white text-[10px]">
+                      Enrolled Classroom
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">• Academic Year {studentCohort.academic_year}</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                    <BookOpen className="h-5 w-5 text-indigo-600" />
+                    {studentCohort.name}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {studentCohort.course} • {studentCohort.branch} • Year {studentCohort.year}, Sec {studentCohort.section}
+                  </p>
+                  {studentCohort.subjects.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      {studentCohort.subjects.map((sub: any) => (
+                        <Badge key={sub.id} variant="outline" className="text-xs bg-muted/40">
+                          <span className="font-semibold text-foreground mr-1">{sub.subject_name}:</span>
+                          <span className="text-muted-foreground">{sub.faculty?.name || "Faculty"}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
+                    onClick={() => navigate("/student/classrooms")}
+                  >
+                    <span>View Classroom Hub</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Missed Class Recovery Banner (if active) */}
         {synapse.missedClass.status !== "completed" && (
@@ -240,7 +352,7 @@ export default function Dashboard() {
               variant="ghost"
               size="sm"
               className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => navigate("/tasks")}
+              onClick={() => navigate("/student/tasks")}
             >
               <span>View all tasks</span>
               <ArrowRight className="ml-1 h-3.5 w-3.5" />
@@ -407,7 +519,7 @@ export default function Dashboard() {
               </Link>
 
               <Link
-                to="/assessments/quiz-norm-mastery"
+                to="/student/quizzes"
                 className="flex items-center justify-between rounded-xl border border-border/40 bg-background/50 p-2.5 transition hover:border-primary/40 hover:bg-background/80"
               >
                 <div className="flex items-center gap-2.5">
@@ -415,8 +527,8 @@ export default function Dashboard() {
                     <CheckCircle2 className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-foreground">Interactive Quiz Runner</p>
-                    <p className="text-[10px] text-muted-foreground">5 Concept Questions</p>
+                    <p className="text-xs font-semibold text-foreground">Classroom Quizzes</p>
+                    <p className="text-[10px] text-muted-foreground">Faculty Assessments</p>
                   </div>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />

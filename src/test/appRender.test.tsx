@@ -41,6 +41,7 @@ import AdminStudentsPage from '@/pages/admin/AdminStudentsPage';
 import Auth from '@/pages/Auth';
 import StudentLogin from '@/pages/student/StudentLogin';
 import StudentChangePassword from '@/pages/student/StudentChangePassword';
+import Assignments from '@/pages/Assignments';
 
 const queryClient = new QueryClient();
 
@@ -159,5 +160,8 @@ describe('All Pages Mounting Verification', () => {
   });
   it('StudentChangePassword mounts cleanly', () => {
     expect(renderPage(<StudentChangePassword />).container).toBeDefined();
+  });
+  it('Assignments mounts cleanly', () => {
+    expect(renderPage(<Assignments />).container).toBeDefined();
   });
 });

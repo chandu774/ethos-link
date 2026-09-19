@@ -247,50 +247,24 @@ export const DEMO_FACULTY_STUDENTS: FacultyStudent[] = [
   },
 ];
 
-export const DEMO_FACULTY_ASSIGNMENTS = [
-  {
-    id: "fac-asg-1",
-    title: "DBMS Assignment 3: Relational Decomposition",
-    courseCode: "CS301",
-    classroom: "DBMS - CSE 3A",
-    topic: "Normalization",
-    dueDate: "Monday, 11:59 PM",
-    maxMarks: 20,
-    estimatedEffort: "30 min",
-    submissionsCount: 48,
-    totalStudents: 62,
-    gradedCount: 32,
-    description: "Decompose the provided universal relation into 2NF and 3NF, ensuring lossless join and dependency preservation.",
-  },
-  {
-    id: "fac-asg-2",
-    title: "DBMS Lab 4: SQL Complex Aggregations & Views",
-    courseCode: "CS301",
-    classroom: "DBMS - CSE 3A",
-    topic: "SQL Queries",
-    dueDate: "Thursday, 5:00 PM",
-    maxMarks: 25,
-    estimatedEffort: "45 min",
-    submissionsCount: 56,
-    totalStudents: 62,
-    gradedCount: 56,
-    description: "Write recursive SQL queries and define materialized views for real-time inventory tracking.",
-  },
-  {
-    id: "fac-asg-3",
-    title: "OS Assignment 2: CPU Scheduling Algorithms Simulation",
-    courseCode: "CS302",
-    classroom: "OS - CSE 3A",
-    topic: "Process Scheduling",
-    dueDate: "Next Friday, 11:59 PM",
-    maxMarks: 30,
-    estimatedEffort: "60 min",
-    submissionsCount: 22,
-    totalStudents: 58,
-    gradedCount: 0,
-    description: "Implement Round Robin and Multi-Level Feedback Queue simulators in C/C++.",
-  },
-];
+export interface FacultyAssignmentItem {
+  id: string;
+  title: string;
+  courseCode?: string;
+  classroom?: string;
+  topic?: string;
+  dueDate: string;
+  maxMarks: number;
+  estimatedEffort?: string;
+  submissionsCount?: number;
+  totalStudents?: number;
+  gradedCount?: number;
+  description?: string;
+  attachment_url?: string;
+  attachment_name?: string;
+}
+
+export const DEMO_FACULTY_ASSIGNMENTS: FacultyAssignmentItem[] = [];
 
 export const DEMO_FACULTY_QUIZZES = [
   {

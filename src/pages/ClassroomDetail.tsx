@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,8 +40,10 @@ import {
   HelpCircle,
   Copy,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { useSynapse } from "@/hooks/useSynapse";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -59,6 +61,30 @@ export default function ClassroomDetail() {
   };
 
   const classroom = synapse.classrooms.find((c) => c.id === classroomId) || synapse.classrooms[0];
+
+  // Classroom Quizzes State
+  const [classroomQuizzes, setClassroomQuizzes] = useState<any[]>([]);
+  const [loadingQuizzes, setLoadingQuizzes] = useState(false);
+
+  useEffect(() => {
+    if (!classroomId) return;
+    const fetchClassQuizzes = async () => {
+      setLoadingQuizzes(true);
+      try {
+        const { data } = await supabase
+          .from("quizzes")
+          .select("id, title, topic, subject, difficulty, status, duration_minutes, max_attempts")
+          .eq("classroom_id", classroomId)
+          .ilike("status", "PUBLISHED");
+        setClassroomQuizzes(data || []);
+      } catch (err) {
+        console.error("Error fetching classroom quizzes:", err);
+      } finally {
+        setLoadingQuizzes(false);
+      }
+    };
+    fetchClassQuizzes();
+  }, [classroomId]);
 
   // Announcement Form State
   const [annTitle, setAnnTitle] = useState("");
@@ -607,39 +633,51 @@ export default function ClassroomDetail() {
               </div>
             </div>
 
-            <div className="grid gap-3.5 sm:grid-cols-2">
-              <Card className="border-border/60 bg-card/85 p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <Badge className="bg-primary/10 text-primary border-0 text-[10px] font-semibold">Diagnostic</Badge>
-                  <span className="text-xs text-muted-foreground font-mono">10 Questions</span>
-                </div>
-                <h4 className="text-sm font-bold text-foreground">DBMS Normalization Comprehensive Checkpoint</h4>
-                <p className="text-xs text-muted-foreground">Tests 1NF, 2NF, 3NF, and BCNF relational dependency preservation.</p>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-500">Your Last Score: 58%</span>
-                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => navigate("/assessments/quiz-norm-mastery")}>
-                    <span>Retake Quiz</span>
-                    <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
+            {loadingQuizzes ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : classroomQuizzes.length === 0 ? (
+              <Card className="p-8 text-center border-dashed">
+                <FileCheck2 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <h4 className="text-sm font-semibold">No Quizzes Published Yet</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When faculty publish quizzes for this classroom cohort, they will appear here.
+                </p>
               </Card>
-
-              <Card className="border-primary/40 bg-primary/5 p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <Badge className="bg-red-500 text-white font-semibold text-[10px]">Targeted Recovery</Badge>
-                  <span className="text-xs text-muted-foreground font-mono">3 Questions</span>
-                </div>
-                <h4 className="text-sm font-bold text-foreground">Targeted 2NF Practice Checkpoint</h4>
-                <p className="text-xs text-muted-foreground">High-yield micro-assessment on partial key dependencies to resolve 2NF gap.</p>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-foreground">Est. 10 mins</span>
-                  <Button size="sm" className="h-8 text-xs gap-1 bg-primary text-primary-foreground font-medium" onClick={() => navigate("/assessments/quiz-2nf-targeted")}>
-                    <FileCheck2 className="h-3.5 w-3.5" />
-                    <span>Take Targeted Quiz</span>
-                  </Button>
-                </div>
-              </Card>
-            </div>
+            ) : (
+              <div className="grid gap-3.5 sm:grid-cols-2">
+                {classroomQuizzes.map((q) => (
+                  <Card key={q.id} className="border-border/60 bg-card/85 p-5 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Badge className="bg-primary/10 text-primary border-0 text-[10px] font-semibold">
+                          {q.subject || "Quiz"}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] capitalize">
+                          {q.difficulty || "Medium"}
+                        </Badge>
+                      </div>
+                      <h4 className="text-sm font-bold text-foreground">{q.title}</h4>
+                      <p className="text-xs text-muted-foreground">Topic: {q.topic}</p>
+                    </div>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/40">
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ~{q.duration_minutes || 15} mins • Max {q.max_attempts || 1} att.
+                      </span>
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs gap-1 bg-primary text-primary-foreground font-medium"
+                        onClick={() => navigate(`/student/quizzes/${q.id}`)}
+                      >
+                        <FileCheck2 className="h-3.5 w-3.5" />
+                        <span>Take Quiz</span>
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* ================= TAB 7: ATTENDANCE ================= */}

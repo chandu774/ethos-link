@@ -260,10 +260,10 @@ export default function AttendanceRecovery() {
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs gap-1.5 border-primary/40 text-primary mt-1"
-                    onClick={() => navigate("/assessments/quiz-2nf-targeted")}
+                    onClick={() => navigate("/student/quizzes")}
                   >
                     <FileCheck2 className="h-3 w-3" />
-                    <span>Take Checkpoint</span>
+                    <span>View Classroom Quizzes</span>
                   </Button>
                 </div>
               </div>

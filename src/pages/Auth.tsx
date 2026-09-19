@@ -76,36 +76,30 @@ export default function Auth() {
         return;
       }
 
-      // Check must_change_password for student or direct navigation
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user) {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("role, is_admin, must_change_password")
-          .eq("id", userData.user.id)
-          .single();
+      if (loggedInRole === "administrator") {
+        toast.success("Welcome back, Administrator");
+        navigate("/admin/dashboard", { replace: true });
+        return;
+      }
 
-        const activeRole: UserRole =
-          prof?.role === "administrator" || prof?.is_admin
-            ? "administrator"
-            : prof?.role === "faculty"
-            ? "faculty"
-            : "student";
+      if (loggedInRole === "faculty") {
+        toast.success("Welcome back, Faculty");
+        navigate("/faculty/dashboard", { replace: true });
+        return;
+      }
 
-        if (activeRole === "administrator") {
-          toast.success("Welcome back, Administrator");
-          navigate("/admin/dashboard", { replace: true });
-        } else if (activeRole === "faculty") {
-          toast.success("Welcome back, Faculty");
-          navigate("/faculty/dashboard", { replace: true });
-        } else {
-          if (prof?.must_change_password) {
-            navigate("/student/change-password", { replace: true });
-          } else {
-            toast.success("Welcome back to Synapse!");
-            navigate("/student/dashboard", { replace: true });
-          }
-        }
+      // Student role: check must_change_password
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("must_change_password")
+        .eq("email", trimmedId.includes("@") ? trimmedId.toLowerCase() : `${trimmedId.toLowerCase()}@student.synapse.local`)
+        .maybeSingle();
+
+      if (prof?.must_change_password) {
+        navigate("/student/change-password", { replace: true });
+      } else {
+        toast.success("Welcome back to Synapse!");
+        navigate("/student/dashboard", { replace: true });
       }
     } catch (err: any) {
       toast.error(err.message || "An unexpected error occurred during sign in.");

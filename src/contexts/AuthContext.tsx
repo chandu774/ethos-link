@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ExtendedProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Compute active role strictly from database profile or trusted app metadata
   const computedRole: UserRole = (() => {
@@ -70,13 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isFaculty = role === "faculty";
   const isStudent = role === "student";
 
-  const fetchProfile = async (userId: string) => {
+  // Effective loading: true while initial check is running or while user is present but profile hasn't loaded yet
+  const effectiveLoading = loading || (!profileLoaded && !!user);
+
+  const fetchProfile = async (userId: string): Promise<ExtendedProfile | null> => {
     try {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error("Error fetching profile:", error);
@@ -93,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       const profileData = await fetchProfile(user.id);
       setProfile(profileData);
+      setProfileLoaded(true);
     }
   };
 
@@ -100,59 +105,117 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear any legacy demo token
     localStorage.removeItem("synapse_demo_auth");
 
-    // Set up auth state listener
+    let isMounted = true;
+
+    // Safety timeout: ensure loading never hangs indefinitely
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setLoading(false);
+        setProfileLoaded(true);
+      }
+    }, 4000);
+
+    // Initial session check from Supabase Auth storage
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!isMounted) return;
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        try {
+          const p = await fetchProfile(session.user.id);
+          if (isMounted) setProfile(p);
+        } catch (e) {
+          console.error("Initial session profile load error:", e);
+        } finally {
+          if (isMounted) {
+            setProfileLoaded(true);
+            setLoading(false);
+            clearTimeout(safetyTimer);
+          }
+        }
+      } else {
+        setProfile(null);
+        setProfileLoaded(true);
+        setLoading(false);
+        clearTimeout(safetyTimer);
+      }
+    }).catch(() => {
+      if (isMounted) {
+        setProfileLoaded(true);
+        setLoading(false);
+        clearTimeout(safetyTimer);
+      }
+    });
+
+    // Set up auth state listener for subsequent events (sign in, sign out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log("Supabase auth state change:", event, session);
+        if (!isMounted) return;
+        // Ignore INITIAL_SESSION because getSession() already handled it above
+        if (event === "INITIAL_SESSION") return;
+
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          setTimeout(() => {
-            fetchProfile(session.user.id).then((p) => {
-              setProfile(p);
-              setLoading(false);
-            });
+          // Defer database query with setTimeout(..., 0) to avoid locking Supabase auth mutex
+          setTimeout(async () => {
+            if (!isMounted) return;
+            try {
+              const p = await fetchProfile(session.user.id);
+              if (isMounted) setProfile(p);
+            } catch (err) {
+              console.error("Error loading profile on auth state change:", err);
+            } finally {
+              if (isMounted) {
+                setProfileLoaded(true);
+                setLoading(false);
+                clearTimeout(safetyTimer);
+              }
+            }
           }, 0);
         } else {
           setProfile(null);
+          setProfileLoaded(true);
           setLoading(false);
+          clearTimeout(safetyTimer);
         }
       }
     );
 
-    // Initial session check from Supabase Auth
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id).then((data) => {
-          setProfile(data);
-          setLoading(false);
-        });
-      } else {
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error, data } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    setLoading(true);
+    setProfileLoaded(false);
+    try {
+      const { error, data } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (error) {
-      return { error: error as Error };
-    }
+      if (error) {
+        setLoading(false);
+        setProfileLoaded(true);
+        return { error: error as Error };
+      }
 
-    if (data?.user) {
-      const p = await fetchProfile(data.user.id);
-      setProfile(p);
+      if (data?.user) {
+        setUser(data.user);
+        setSession(data.session);
+        const p = await fetchProfile(data.user.id);
+        setProfile(p);
+      }
+      return { error: null };
+    } finally {
+      setLoading(false);
+      setProfileLoaded(true);
     }
-    return { error: null };
   };
 
   // Student login using Roll Number + Password with deterministic internal mapping
@@ -167,6 +230,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: new Error("Please enter your Login ID or Roll Number.") };
     }
 
+    setLoading(true);
+    setProfileLoaded(false);
     try {
       // 1. Resolve identifier to internal email via database RPC
       let targetEmail = cleanId;
@@ -189,12 +254,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (signInError) {
+        setLoading(false);
+        setProfileLoaded(true);
         return { error: signInError as Error };
       }
 
       // 3. Fetch profile immediately to compute active role
       let activeRole: UserRole = "student";
       if (data?.user) {
+        setUser(data.user);
+        setSession(data.session);
         const p = await fetchProfile(data.user.id);
         setProfile(p);
         if (p?.role === "administrator" || p?.is_admin) {
@@ -209,6 +278,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null, role: activeRole };
     } catch (err: any) {
       return { error: err as Error };
+    } finally {
+      setLoading(false);
+      setProfileLoaded(true);
     }
   };
 
@@ -248,7 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    const baseUrl = import.meta.env.VITE_SITE_URL?.replace(/\/+$/, "") ?? window.location.origin;
+    const baseUrl = window.location.origin;
     const redirectUrl = `${baseUrl}/auth`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
     return { error: error as Error | null };
@@ -269,7 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isFaculty,
         isStudent,
-        loading,
+        loading: effectiveLoading,
         signIn,
         loginWithRollNumber,
         loginWithIdentifier,

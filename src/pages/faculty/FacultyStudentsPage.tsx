@@ -1,17 +1,23 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { FacultyLayout } from "@/components/layout/FacultyLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,241 +28,199 @@ import {
   CalendarCheck,
   Award,
   ChevronRight,
-  UserPlus,
-  FileSpreadsheet,
-  Download,
-  Upload,
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Copy,
-  Check,
+  Eye,
+  School,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
+interface EnrolledStudent {
+  id: string;
+  name: string;
+  roll_number: string;
+  email: string | null;
+  course: string | null;
+  branch: string | null;
+  year: string | null;
+  section: string | null;
+  classroom_id: string;
+  classroom_name: string;
+  classroom_info: string;
+  joined_at: string;
+}
+
 export default function FacultyStudentsPage() {
-  const [searchParams] = useSearchParams();
-  const initialFilter = searchParams.get("filter") || "all";
+  const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [classroomFilter, setClassroomFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState(initialFilter);
+  const [selectedClassroomId, setSelectedClassroomId] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<EnrolledStudent[]>([]);
+  const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
 
-  // Real DB students state
-  const [dbStudents, setDbStudents] = useState<any[]>([]);
-  const [coursesList, setCoursesList] = useState<any[]>([]);
-  const [loadingDb, setLoadingDb] = useState(false);
+  // Selected student for detail modal
+  const [selectedStudent, setSelectedStudent] = useState<EnrolledStudent | null>(null);
+  const [studentModalOpen, setStudentModalOpen] = useState(false);
+  const [studentQuizzes, setStudentQuizzes] = useState<any[]>([]);
+  const [studentAssignments, setStudentAssignments] = useState<any[]>([]);
+  const [loadingStats, setLoadingStats] = useState(false);
 
-  // Add Single Student Modal
-  const [openAddSingle, setOpenAddSingle] = useState(false);
-  const [addLoading, setAddLoading] = useState(false);
-  const [singleRoll, setSingleRoll] = useState("");
-  const [singleName, setSingleName] = useState("");
-  const [selectedClassroomId, setSelectedClassroomId] = useState("");
-  const [singleCourse, setSingleCourse] = useState("B.Tech");
-  const [singleBranch, setSingleBranch] = useState("Computer Science & Engineering");
-  const [singleYear, setSingleYear] = useState("3rd Year");
-  const [singleSection, setSingleSection] = useState("CSE 3A");
+  const fetchEnrolledStudents = async () => {
+    if (!user) return;
+    setLoading(true);
 
-  // Bulk Import Modal
-  const [openBulkImport, setOpenBulkImport] = useState(false);
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [csvText, setCsvText] = useState("");
-  const [bulkResult, setBulkResult] = useState<{
-    created_count: number;
-    skipped_count: number;
-    errors: any[];
-  } | null>(null);
-
-  // Success Credential Notification for newly created single student
-  const [createdStudentNotice, setCreatedStudentNotice] = useState<{
-    roll_number: string;
-    name: string;
-    password: string;
-  } | null>(null);
-
-  // Load real students and classrooms from Supabase
-  const fetchDbStudents = async () => {
-    setLoadingDb(true);
     try {
-      const [{ data: studentsData, error: stErr }, { data: coursesData }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name, roll_number, course, branch, year, section, created_at, must_change_password")
-          .eq("role", "student")
-          .order("roll_number", { ascending: true }),
-        supabase.from("courses").select("id, title, code, section, branch, course"),
-      ]);
+      // 1. Fetch classrooms assigned to this faculty via teaching_assignments
+      const { data: taData, error: taErr } = await supabase
+        .from("teaching_assignments")
+        .select(`
+          classroom_id,
+          classroom:classrooms!teaching_assignments_classroom_id_fkey(
+            id,
+            name,
+            course,
+            branch,
+            year,
+            section
+          )
+        `)
+        .eq("faculty_id", user.id);
 
-      if (stErr) {
-        console.error("Error fetching student profiles:", stErr);
-      } else if (studentsData) {
-        setDbStudents(studentsData);
-      }
+      if (taErr) throw taErr;
 
-      if (coursesData) {
-        setCoursesList(coursesData);
-        if (coursesData.length > 0 && !selectedClassroomId) {
-          setSelectedClassroomId(coursesData[0].id);
+      const uniqueClassroomsMap = new Map<string, { id: string; name: string }>();
+      (taData || []).forEach((item: any) => {
+        if (item.classroom) {
+          uniqueClassroomsMap.set(item.classroom.id, {
+            id: item.classroom.id,
+            name: `${item.classroom.name} (${item.classroom.course} - Sec ${item.classroom.section})`,
+          });
         }
-      }
-    } catch (err) {
-      console.error(err);
+      });
+      const clsList = Array.from(uniqueClassroomsMap.values());
+      setClassrooms(clsList);
+
+      // 2. Fetch classroom members. RLS enforces that faculty only sees members of their assigned classrooms.
+      const { data: membersData, error: mErr } = await supabase
+        .from("classroom_members")
+        .select(`
+          id,
+          joined_at,
+          classroom_id,
+          classroom:classrooms!classroom_members_classroom_id_fkey(
+            id,
+            name,
+            course,
+            branch,
+            year,
+            section
+          ),
+          student:profiles!classroom_members_student_id_fkey(
+            id,
+            name,
+            roll_number,
+            email,
+            course,
+            branch,
+            year,
+            section
+          )
+        `);
+
+      if (mErr) throw mErr;
+
+      const parsed: EnrolledStudent[] = (membersData || [])
+        .filter((m: any) => m.student)
+        .map((m: any) => ({
+          id: m.student.id,
+          name: m.student.name || "Unnamed Student",
+          roll_number: m.student.roll_number || "No Roll",
+          email: m.student.email || null,
+          course: m.student.course || m.classroom?.course,
+          branch: m.student.branch || m.classroom?.branch,
+          year: m.student.year || `${m.classroom?.year || ""}`,
+          section: m.student.section || m.classroom?.section,
+          classroom_id: m.classroom_id,
+          classroom_name: m.classroom?.name || "Classroom",
+          classroom_info: `${m.classroom?.course || ""} ${m.classroom?.branch || ""} Year ${m.classroom?.year || ""} Sec ${m.classroom?.section || ""}`.trim(),
+          joined_at: m.joined_at,
+        }));
+
+      // Deduplicate in case a student is in multiple views
+      const uniqueStudents = Array.from(
+        new Map(parsed.map((s) => [`${s.id}-${s.classroom_id}`, s])).values()
+      );
+
+      setStudents(uniqueStudents);
+    } catch (err: any) {
+      console.error("Error fetching enrolled students:", err);
+      toast.error("Failed to load students roster");
     } finally {
-      setLoadingDb(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDbStudents();
-  }, []);
+    fetchEnrolledStudents();
+  }, [user]);
 
-  // Real students roster only — zero fake/demo accounts
-  const realStudents = useMemo(() => {
-    return dbStudents.map((d) => ({
-      id: d.id,
-      name: d.name || "Student",
-      roll_number: d.roll_number || "Unassigned",
-      classroom: d.course ? `${d.course} - ${d.section || d.branch || "General"}` : "General Cohort",
-      attendance: 92,
-      performance: 84,
-      supportStatus: "on_track",
-      weakAreasCount: 0,
-      isReal: true,
-      must_change_password: d.must_change_password,
-    }));
-  }, [dbStudents]);
+  // Load student performance data when opening modal
+  const handleViewStudent = async (student: EnrolledStudent) => {
+    setSelectedStudent(student);
+    setStudentModalOpen(true);
+    setLoadingStats(true);
+
+    try {
+      const [{ data: quizAtts }, { data: asgSubs }] = await Promise.all([
+        supabase
+          .from("quiz_attempts")
+          .select(`
+            id,
+            score,
+            max_score,
+            completed_at,
+            quiz:quizzes(title, topic, subject)
+          `)
+          .eq("user_id", student.id),
+        supabase
+          .from("assignment_submissions")
+          .select(`
+            id,
+            status,
+            marks_obtained,
+            submitted_at,
+            assignment:assignments(title, max_marks, topic, subject)
+          `)
+          .eq("user_id", student.id),
+      ]);
+
+      setStudentQuizzes(quizAtts || []);
+      setStudentAssignments(asgSubs || []);
+    } catch (err) {
+      console.error("Error fetching student performance:", err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
 
   const filteredStudents = useMemo(() => {
-    return realStudents.filter((student) => {
+    return students.filter((s) => {
       const matchesSearch =
-        student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.roll_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.classroom.toLowerCase().includes(searchQuery.toLowerCase());
+        searchQuery === "" ||
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.roll_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.email && s.email.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesClassroom =
-        classroomFilter === "all" || student.classroom.toLowerCase().includes(classroomFilter.toLowerCase());
+        selectedClassroomId === "all" || s.classroom_id === selectedClassroomId;
 
-      const matchesStatus =
-        statusFilter === "all" || student.supportStatus === statusFilter;
-
-      return matchesSearch && matchesClassroom && matchesStatus;
+      return matchesSearch && matchesClassroom;
     });
-  }, [realStudents, searchQuery, classroomFilter, statusFilter]);
-
-  const handleAddSingleStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!singleRoll.trim() || !singleName.trim()) {
-      toast.error("Roll Number and Student Name are required");
-      return;
-    }
-
-    setAddLoading(true);
-    try {
-      const { data, error } = await supabase.rpc("faculty_create_student", {
-        p_roll_number: singleRoll.trim().toUpperCase(),
-        p_name: singleName.trim(),
-        p_course: singleCourse,
-        p_branch: singleBranch,
-        p_year: singleYear,
-        p_section: singleSection,
-        p_classroom_id: selectedClassroomId || null,
-      });
-
-      if (error) {
-        toast.error("Failed to create student: " + error.message);
-        return;
-      }
-
-      toast.success(`Student account created for ${singleName}!`);
-      setCreatedStudentNotice({
-        roll_number: singleRoll.trim().toUpperCase(),
-        name: singleName.trim(),
-        password: singleRoll.trim().toUpperCase(), // initial password = roll number
-      });
-
-      setSingleRoll("");
-      setSingleName("");
-      setOpenAddSingle(false);
-      fetchDbStudents();
-    } catch (err: any) {
-      toast.error("Error creating student: " + err.message);
-    } finally {
-      setAddLoading(false);
-    }
-  };
-
-  const handleBulkImport = async () => {
-    if (!csvText.trim()) {
-      toast.error("Please paste CSV data or upload a CSV file");
-      return;
-    }
-
-    setBulkLoading(true);
-    try {
-      // Parse CSV
-      const lines = csvText.trim().split("\n");
-      const students: any[] = [];
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        // Skip header if it starts with roll
-        if (i === 0 && line.toLowerCase().includes("roll")) continue;
-
-        const parts = line.split(",").map((p) => p.trim().replace(/^"|"$/g, ""));
-        if (parts.length >= 2) {
-          students.push({
-            roll_number: parts[0],
-            name: parts[1],
-            course: parts[2] || singleCourse,
-            branch: parts[3] || singleBranch,
-            year: parts[4] || singleYear,
-            section: parts[5] || singleSection,
-          });
-        }
-      }
-
-      if (students.length === 0) {
-        toast.error("No valid student rows found in CSV");
-        return;
-      }
-
-      const { data, error } = await supabase.rpc("faculty_bulk_create_students", {
-        p_students: students,
-      });
-
-      if (error) {
-        toast.error("Bulk import failed: " + error.message);
-        return;
-      }
-
-      const res = data as any;
-      setBulkResult(res);
-      toast.success(`Bulk import completed: ${res.created_count} created, ${res.skipped_count} skipped.`);
-      fetchDbStudents();
-    } catch (err: any) {
-      toast.error("Error processing CSV: " + err.message);
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  const sampleCsvContent = `roll_number,name,course,branch,year,section
-CS22B081,Rahul Sharma,B.Tech,Computer Science & Engineering,3rd Year,CSE 3A
-CS22B082,Pooja Verma,B.Tech,Computer Science & Engineering,3rd Year,CSE 3A
-CS22B083,Amit Patel,B.Tech,Computer Science & Engineering,3rd Year,CSE 3A`;
-
-  const handleDownloadSampleCsv = () => {
-    const encodedUri = encodeURI("data:text/csv;charset=utf-8," + sampleCsvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "synapse_student_import_sample.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  }, [students, searchQuery, selectedClassroomId]);
 
   return (
     <FacultyLayout>
@@ -266,443 +230,268 @@ CS22B083,Amit Patel,B.Tech,Computer Science & Engineering,3rd Year,CSE 3A`;
           <div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-xs">
-                Student Directory & Provisioning
+                Enrolled Cohorts
               </Badge>
-              <span className="text-xs text-muted-foreground">• Hierarchy Level 3</span>
+              <span className="text-xs text-muted-foreground">• Authorized Faculty View</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground mt-1">
-              Classroom Students & Enrollment
+              Student Directory
             </h1>
             <p className="text-sm text-muted-foreground">
-              Add individual students or bulk-import via CSV. Student accounts are generated with Roll Number logins.
+              Students enrolled in the classrooms and cohorts allocated to your teaching assignments.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setOpenBulkImport(true)}
-              className="text-xs border-indigo-500/30 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
-              Bulk Import CSV
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setOpenAddSingle(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm shadow-indigo-600/25"
-            >
-              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-              + Add Student
-            </Button>
+            <Badge variant="secondary" className="text-xs py-1 px-3">
+              {students.length} Total Enrolled
+            </Badge>
           </div>
         </div>
 
-        {/* Filters and Search Bar */}
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between bg-card p-4 rounded-2xl border shadow-card">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search student name, roll number, or classroom..."
-              className="pl-9 text-sm"
-            />
+        {/* Filters */}
+        <Card className="shadow-card border-slate-200 dark:border-slate-800">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by student name or roll number..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 text-sm"
+                />
+              </div>
+
+              <div className="w-full sm:w-72">
+                <select
+                  value={selectedClassroomId}
+                  onChange={(e) => setSelectedClassroomId(e.target.value)}
+                  className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="all">All Assigned Classrooms ({classrooms.length})</option>
+                  {classrooms.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Student Roster */}
+        {loading ? (
+          <div className="flex items-center justify-center p-16 bg-muted/20 rounded-2xl border border-dashed">
+            <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            <select
-              value={classroomFilter}
-              onChange={(e) => setClassroomFilter(e.target.value)}
-              className="h-9 text-xs rounded-xl border bg-background px-3 font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="all">All Classrooms</option>
-              {coursesList.map((c) => (
-                <option key={c.id} value={c.title}>
-                  {c.title} ({c.code})
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 text-xs rounded-xl border bg-background px-3 font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="all">All Support Statuses</option>
-              <option value="needs_support">Needs Support</option>
-              <option value="monitoring">Monitoring</option>
-              <option value="on_track">On Track</option>
-            </select>
-
-            {(searchQuery || classroomFilter !== "all" || statusFilter !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 text-xs text-muted-foreground"
-                onClick={() => {
-                  setSearchQuery("");
-                  setClassroomFilter("all");
-                  setStatusFilter("all");
-                }}
-              >
-                Reset
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Students List */}
-        <div className="space-y-3">
-          {filteredStudents.map((student) => {
-            const initials = student.name
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("");
-
-            return (
-              <Card
-                key={student.id}
-                className="shadow-card hover:border-indigo-500/40 transition-all border-slate-200 dark:border-slate-800"
-              >
-                <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  {/* Student Identity */}
-                  <div className="flex items-center gap-4 min-w-[260px]">
-                    <Avatar className="h-12 w-12 border border-indigo-500/20 shadow-sm">
-                      <AvatarFallback className="bg-indigo-600/10 text-indigo-600 font-bold text-sm">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-base text-foreground">{student.name}</span>
-                        <Badge variant="outline" className="font-mono text-[10px] text-indigo-600 border-indigo-500/30">
-                          {student.roll_number}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{student.classroom}</p>
-                    </div>
-                  </div>
-
-                  {/* Academic Metrics Row */}
-                  <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs">
-                    <div className="space-y-0.5">
-                      <div className="text-muted-foreground flex items-center gap-1">
-                        <CalendarCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                        Attendance
-                      </div>
-                      <div className="font-bold text-sm text-foreground">{student.attendance}%</div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="text-muted-foreground flex items-center gap-1">
-                        <Award className="h-3.5 w-3.5 text-muted-foreground" />
-                        Performance
-                      </div>
-                      <div className="font-bold text-sm text-foreground">{student.performance}%</div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="text-muted-foreground">Support Status</div>
-                      <div className="font-semibold text-xs capitalize text-foreground">
-                        {student.supportStatus === "needs_support"
-                          ? `Needs support (${student.weakAreasCount} topics)`
-                          : student.supportStatus === "monitoring"
-                          ? "1 flag monitored"
-                          : "Consistently on track"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action */}
-                  <div>
-                    <Link to={`/faculty/students/${student.id}`}>
-                      <Button size="sm" className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs gap-1.5 shadow-sm shadow-indigo-600/20">
-                        View Academic Profile
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {realStudents.length === 0 ? (
-            <div className="text-center py-16 rounded-2xl border border-dashed bg-muted/20 space-y-3">
-              <Users className="h-10 w-10 mx-auto text-indigo-600/60" />
-              <div className="space-y-1">
-                <p className="font-semibold text-foreground text-base">No students enrolled yet</p>
-                <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                  Provision student accounts using the '+ Add Student' button or upload a CSV roster using 'Bulk Import CSV'.
+        ) : filteredStudents.length === 0 ? (
+          <Card className="border-dashed border-2 bg-muted/20">
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+              <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600">
+                <Users className="h-7 w-7" />
+              </div>
+              <div className="max-w-md space-y-1">
+                <h3 className="text-base font-bold text-foreground">No Students Found</h3>
+                <p className="text-sm text-muted-foreground">
+                  {students.length === 0
+                    ? "No students are currently enrolled in your assigned classrooms. Student accounts are created and enrolled by your administrator."
+                    : "No students matched your search criteria."}
                 </p>
               </div>
-              <div className="flex items-center justify-center gap-2 pt-2">
-                <Button size="sm" onClick={() => setOpenAddSingle(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs">
-                  <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-                  Add First Student
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setOpenBulkImport(true)} className="text-xs">
-                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
-                  Bulk Import CSV
-                </Button>
-              </div>
-            </div>
-          ) : filteredStudents.length === 0 ? (
-            <div className="text-center py-12 rounded-2xl border bg-card/40 space-y-2">
-              <Users className="h-8 w-8 mx-auto text-muted-foreground" />
-              <p className="font-semibold text-foreground">No students match the criteria</p>
-              <p className="text-xs text-muted-foreground">Try clearing filters or provision a new student account above.</p>
-            </div>
-          ) : null}
-        </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="border rounded-2xl overflow-hidden bg-card shadow-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-16">#</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Roll Number</TableHead>
+                  <TableHead>Classroom Cohort</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredStudents.map((student, idx) => {
+                  const initials = student.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase();
 
-        {/* Modal: Add Individual Student */}
-        <Dialog open={openAddSingle} onOpenChange={setOpenAddSingle}>
-          <DialogContent className="sm:max-w-md">
+                  return (
+                    <TableRow key={`${student.id}-${student.classroom_id}`} className="hover:bg-muted/30">
+                      <TableCell className="text-xs text-muted-foreground font-mono">
+                        {idx + 1}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8 border">
+                            <AvatarFallback className="text-[11px] font-bold bg-indigo-500/10 text-indigo-600">
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="font-semibold text-sm text-foreground">
+                            {student.name}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {student.roll_number}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="text-xs font-semibold text-foreground">
+                            {student.classroom_name}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {student.classroom_info}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {student.email || "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          onClick={() => handleViewStudent(student)}
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 gap-1 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>Performance</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Student Performance Modal */}
+        <Dialog open={studentModalOpen} onOpenChange={setStudentModalOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-base flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-indigo-600" />
-                Add & Provision Student Account
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-indigo-600" />
+                <span>Academic Record: {selectedStudent?.name}</span>
               </DialogTitle>
               <DialogDescription className="text-xs">
-                Creates an institutional student account. The student logs in using their Roll Number and initial temporary password (equal to Roll Number).
+                Roll Number: {selectedStudent?.roll_number} • Cohort: {selectedStudent?.classroom_name}
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleAddSingleStudent} className="space-y-3 py-2">
-              {coursesList.length > 0 && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Assign to Classroom / Cohort</Label>
-                  <select
-                    value={selectedClassroomId}
-                    onChange={(e) => {
-                      const cid = e.target.value;
-                      setSelectedClassroomId(cid);
-                      const sel = coursesList.find((c) => c.id === cid);
-                      if (sel) {
-                        if (sel.course) setSingleCourse(sel.course);
-                        if (sel.branch) setSingleBranch(sel.branch);
-                        if (sel.section) setSingleSection(sel.section);
-                      }
-                    }}
-                    className="w-full h-8 text-xs rounded-md border bg-background px-2"
-                  >
-                    <option value="">-- Do not assign to classroom --</option>
-                    {coursesList.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} ({c.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Roll Number *</Label>
-                  <Input
-                    value={singleRoll}
-                    onChange={(e) => setSingleRoll(e.target.value.toUpperCase())}
-                    placeholder="CS22B050"
-                    className="h-8 text-xs font-mono uppercase"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Full Name *</Label>
-                  <Input
-                    value={singleName}
-                    onChange={(e) => setSingleName(e.target.value)}
-                    placeholder="Priya Nair"
-                    className="h-8 text-xs"
-                    required
-                  />
-                </div>
+            {loadingStats ? (
+              <div className="flex items-center justify-center p-12">
+                <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Course</Label>
-                  <Input
-                    value={singleCourse}
-                    onChange={(e) => setSingleCourse(e.target.value)}
-                    className="h-8 text-xs"
-                  />
+            ) : (
+              <div className="space-y-6 py-2">
+                {/* Summary Metrics */}
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="p-3 rounded-xl border bg-muted/40">
+                    <div className="text-[11px] text-muted-foreground uppercase font-semibold">
+                      Quiz Attempts
+                    </div>
+                    <div className="text-2xl font-extrabold text-foreground">
+                      {studentQuizzes.length}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-muted/40">
+                    <div className="text-[11px] text-muted-foreground uppercase font-semibold">
+                      Assignments Submitted
+                    </div>
+                    <div className="text-2xl font-extrabold text-indigo-600">
+                      {studentAssignments.length}
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Branch</Label>
-                  <Input
-                    value={singleBranch}
-                    onChange={(e) => setSingleBranch(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Year</Label>
-                  <Input
-                    value={singleYear}
-                    onChange={(e) => setSingleYear(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Section</Label>
-                  <Input
-                    value={singleSection}
-                    onChange={(e) => setSingleSection(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-
-              <DialogFooter className="pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setOpenAddSingle(false)}
-                  className="text-xs"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
-                  disabled={addLoading}
-                >
-                  {addLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                  Provision Student Account
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Modal: Bulk Import via CSV */}
-        <Dialog open={openBulkImport} onOpenChange={setOpenBulkImport}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-base flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
-                Bulk Import Students via CSV
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                Import multiple students simultaneously. Each student will be provisioned with Roll Number authentication and enrolled into your classroom.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3 py-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">CSV Data (Format: roll_number,name,course,branch,year,section)</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDownloadSampleCsv}
-                  className="h-7 text-[11px] text-indigo-600 hover:text-indigo-700 p-0"
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Download Sample CSV
-                </Button>
-              </div>
-
-              <textarea
-                value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
-                placeholder={sampleCsvContent}
-                rows={6}
-                className="w-full text-xs font-mono p-3 rounded-xl border bg-muted/40 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-
-              {bulkResult && (
-                <div className="p-3 rounded-xl border bg-muted/50 text-xs space-y-1">
-                  <div className="font-semibold text-foreground">Import Results:</div>
-                  <div className="text-emerald-600 font-medium">✓ {bulkResult.created_count} students provisioned</div>
-                  {bulkResult.skipped_count > 0 && (
-                    <div className="text-muted-foreground">• {bulkResult.skipped_count} existing students updated</div>
-                  )}
-                  {bulkResult.errors?.length > 0 && (
-                    <div className="text-rose-600">⚠ {bulkResult.errors.length} failed rows</div>
+                {/* Quizzes List */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Diagnostic Quiz History
+                  </h4>
+                  {studentQuizzes.length === 0 ? (
+                    <p className="text-xs text-muted-foreground p-3 border rounded-xl bg-muted/20">
+                      No quiz attempts logged for this student yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {studentQuizzes.map((att: any) => (
+                        <div
+                          key={att.id}
+                          className="flex items-center justify-between p-3 rounded-xl border text-xs bg-card"
+                        >
+                          <div>
+                            <div className="font-semibold text-foreground">
+                              {att.quiz?.title || "Quiz"}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {att.quiz?.subject} • {att.quiz?.topic}
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs font-mono font-bold">
+                            {att.score} / {att.max_score || 100}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            <DialogFooter className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setOpenBulkImport(false);
-                  setBulkResult(null);
-                }}
-                className="text-xs"
-              >
-                Close
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleBulkImport}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
-                disabled={bulkLoading}
-              >
-                {bulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                Run Bulk Import
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Modal: Single Student Notice */}
-        <Dialog open={!!createdStudentNotice} onOpenChange={() => setCreatedStudentNotice(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-base text-emerald-600 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Student Account Provisioned
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                The student account is created. Share these login instructions with the student:
-              </DialogDescription>
-            </DialogHeader>
-
-            {createdStudentNotice && (
-              <div className="p-3.5 rounded-xl border bg-muted/50 space-y-2 text-xs font-mono">
-                <div className="flex justify-between border-b pb-1">
-                  <span className="text-muted-foreground font-sans">Name:</span>
-                  <span className="font-semibold">{createdStudentNotice.name}</span>
-                </div>
-                <div className="flex justify-between border-b pb-1">
-                  <span className="text-muted-foreground font-sans">Roll Number:</span>
-                  <span className="font-semibold text-primary">{createdStudentNotice.roll_number}</span>
-                </div>
-                <div className="flex justify-between border-b pb-1">
-                  <span className="text-muted-foreground font-sans">Initial Password:</span>
-                  <span className="text-rose-600 font-bold">{createdStudentNotice.password}</span>
-                </div>
-                <div className="flex justify-between pt-1">
-                  <span className="text-muted-foreground font-sans">Portal URL:</span>
-                  <span className="text-primary truncate">/student/login</span>
+                {/* Assignments List */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Coursework Submissions
+                  </h4>
+                  {studentAssignments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground p-3 border rounded-xl bg-muted/20">
+                      No assignment submissions submitted yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {studentAssignments.map((sub: any) => (
+                        <div
+                          key={sub.id}
+                          className="flex items-center justify-between p-3 rounded-xl border text-xs bg-card"
+                        >
+                          <div>
+                            <div className="font-semibold text-foreground">
+                              {sub.assignment?.title || "Assignment"}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Submitted: {new Date(sub.submitted_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <Badge
+                            className={`text-[11px] ${
+                              sub.status === "graded"
+                                ? "bg-emerald-600 text-white"
+                                : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                            }`}
+                          >
+                            {sub.status === "graded"
+                              ? `${sub.marks_obtained ?? 0} / ${sub.assignment?.max_marks || 20}`
+                              : "Pending Review"}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setCreatedStudentNotice(null)}
-                className="w-full text-xs"
-              >
-                Done
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

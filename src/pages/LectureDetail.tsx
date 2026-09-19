@@ -336,10 +336,10 @@ export default function LectureDetail() {
                         size="sm"
                         variant="outline"
                         className="w-full text-xs gap-1.5"
-                        onClick={() => navigate("/assessments/quiz-norm-mastery")}
+                        onClick={() => navigate("/student/quizzes")}
                       >
                         <FileCheck2 className="h-3.5 w-3.5 text-primary" />
-                        <span>Take Lecture Quiz Checkpoint</span>
+                        <span>Take Classroom Quiz</span>
                       </Button>
                     </div>
                   </TabsContent>
@@ -419,10 +419,10 @@ export default function LectureDetail() {
                       <Button
                         size="sm"
                         className="w-full text-xs bg-primary text-primary-foreground font-medium"
-                        onClick={() => navigate("/assessments/quiz-norm-mastery")}
+                        onClick={() => navigate("/student/quizzes")}
                       >
                         <FileCheck2 className="mr-1.5 h-3.5 w-3.5" />
-                        <span>Test Knowledge on this Lecture</span>
+                        <span>Take Classroom Quiz</span>
                       </Button>
                       <Button
                         size="sm"

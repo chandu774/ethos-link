@@ -145,7 +145,7 @@ export const HACKATHON_DEMO_STEPS: HackathonDemoStep[] = [
   },
 ];
 
-const STORAGE_KEY = "synapse_academic_state_v3";
+const STORAGE_KEY = "synapse_academic_state_v4";
 
 export interface ExtractedAcademicAction {
   id: string;
@@ -245,45 +245,7 @@ const INITIAL_STATE: SynapseState = {
   },
   activeDemoStep: 1,
   quizHistory: {},
-  tasks: [
-    {
-      id: "task-1",
-      title: "DBMS Assignment 3: Relational Decomposition",
-      subject: "CS301",
-      description: "Decompose schemas into 2NF and 3NF without losing functional dependencies. (Official Assignment)",
-      deadline: "Tomorrow, 11:59 PM",
-      priority: "HIGH",
-      status: "in_progress",
-      estimatedMinutes: 30,
-      source: "Official Classroom Assignment",
-      assignmentId: "asg-dbms-3",
-      classroomId: "cls-dbms-3a",
-    },
-    {
-      id: "task-2",
-      title: "Operating Systems Page Replacement Lab",
-      subject: "CS302",
-      description: "Submit LRU cache simulation in C++ on classroom portal.",
-      deadline: "Thursday, 5:00 PM",
-      priority: "MEDIUM",
-      status: "pending",
-      estimatedMinutes: 45,
-      source: "Official Classroom Assignment",
-      assignmentId: "asg-os-1",
-      classroomId: "cls-os-3a",
-    },
-    {
-      id: "task-3",
-      title: "Review 2NF Partial Dependencies",
-      subject: "CS301",
-      description: "Self-study intervention recommended by Synapse AI after Quiz 3.",
-      deadline: "Today",
-      priority: "HIGH",
-      status: "pending",
-      estimatedMinutes: 20,
-      source: "Synapse AI Intervention",
-    },
-  ],
+  tasks: [],
   learningEvents: DEMO_LEARNING_EVENTS,
 };
 
@@ -297,6 +259,9 @@ export class SynapseCoreService {
 
   private loadState(): SynapseState {
     try {
+      localStorage.removeItem("synapse_academic_state_v1");
+      localStorage.removeItem("synapse_academic_state_v2");
+      localStorage.removeItem("synapse_academic_state_v3");
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         return { ...INITIAL_STATE, ...JSON.parse(saved) };

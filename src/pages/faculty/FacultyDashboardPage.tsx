@@ -1,11 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FacultyLayout } from "@/components/layout/FacultyLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -15,55 +13,199 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   GraduationCap,
   Users,
   BookOpen,
   ClipboardList,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp,
-  FileCheck2,
+  HelpCircle,
   Sparkles,
   Send,
   Plus,
   ArrowRight,
-  Lightbulb,
-  CheckCircle2,
+  School,
+  Layers,
+  Loader2,
   CalendarCheck,
-  ShieldCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSynapse } from "@/hooks/useSynapse";
-import { DEMO_FACULTY_STUDENTS, DEMO_FACULTY_ASSIGNMENTS } from "@/data/facultyDemoData";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface TeachingCohort {
+  id: string;
+  faculty_id: string;
+  classroom_id: string;
+  subject_name: string;
+  subject_code: string | null;
+  classroom: {
+    id: string;
+    name: string;
+    course: string;
+    branch: string;
+    year: number;
+    section: string;
+    academic_year: string;
+  };
+  student_count?: number;
+  assignment_count?: number;
+  quiz_count?: number;
+}
 
 export default function FacultyDashboardPage() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
-  const synapse = useSynapse();
+  const { user, profile } = useAuth();
 
+  const [loading, setLoading] = useState(true);
+  const [teachingAssignments, setTeachingAssignments] = useState<TeachingCohort[]>([]);
+  const [totalStudentsCount, setTotalStudentsCount] = useState(0);
+  const [totalAssignmentsCount, setTotalAssignmentsCount] = useState(0);
+  const [totalQuizzesCount, setTotalQuizzesCount] = useState(0);
+
+  // Announcement state
   const [announcementText, setAnnouncementText] = useState("");
   const [announceOpen, setAnnounceOpen] = useState(false);
-  const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
-  const instructorName = profile?.name || "Dr. Aris Thorne";
+  const instructorName = profile?.name || "Faculty Member";
+
+  const fetchFacultyDashboardData = async () => {
+    if (!user) return;
+    setLoading(true);
+
+    try {
+      // 1. Fetch teaching assignments for this faculty
+      const { data: taData, error: taErr } = await supabase
+        .from("teaching_assignments")
+        .select(`
+          id,
+          faculty_id,
+          classroom_id,
+          subject_name,
+          subject_code,
+          classroom:classrooms!teaching_assignments_classroom_id_fkey(
+            id,
+            name,
+            course,
+            branch,
+            year,
+            section,
+            academic_year
+          )
+        `)
+        .eq("faculty_id", user.id);
+
+      if (taErr) throw taErr;
+
+      const cohorts = (taData as any[]) || [];
+
+      if (cohorts.length === 0) {
+        setTeachingAssignments([]);
+        setTotalStudentsCount(0);
+        setTotalAssignmentsCount(0);
+        setTotalQuizzesCount(0);
+        setLoading(false);
+        return;
+      }
+
+      const classroomIds = Array.from(new Set(cohorts.map((c) => c.classroom_id).filter(Boolean)));
+      const teachingIds = cohorts.map((c) => c.id);
+
+      // 2. Fetch student membership counts per classroom
+      let studentCountMap: Record<string, number> = {};
+      let allUniqueStudentIds = new Set<string>();
+
+      if (classroomIds.length > 0) {
+        const { data: membersData } = await supabase
+          .from("classroom_members")
+          .select("classroom_id, student_id")
+          .in("classroom_id", classroomIds);
+
+        if (membersData) {
+          membersData.forEach((m) => {
+            studentCountMap[m.classroom_id] = (studentCountMap[m.classroom_id] || 0) + 1;
+            allUniqueStudentIds.add(m.student_id);
+          });
+        }
+      }
+
+      // 3. Fetch assignments counts
+      let asgCountMap: Record<string, number> = {};
+      let totalAsgs = 0;
+      if (teachingIds.length > 0) {
+        const { data: asgData } = await supabase
+          .from("assignments")
+          .select("id, teaching_assignment_id")
+          .in("teaching_assignment_id", teachingIds);
+
+        if (asgData) {
+          totalAsgs = asgData.length;
+          asgData.forEach((a) => {
+            if (a.teaching_assignment_id) {
+              asgCountMap[a.teaching_assignment_id] = (asgCountMap[a.teaching_assignment_id] || 0) + 1;
+            }
+          });
+        }
+      }
+
+      // 4. Fetch quizzes counts
+      let quizCountMap: Record<string, number> = {};
+      let totalQzs = 0;
+      if (teachingIds.length > 0) {
+        const { data: qzData } = await supabase
+          .from("quizzes")
+          .select("id, teaching_assignment_id")
+          .in("teaching_assignment_id", teachingIds);
+
+        if (qzData) {
+          totalQzs = qzData.length;
+          qzData.forEach((q) => {
+            if (q.teaching_assignment_id) {
+              quizCountMap[q.teaching_assignment_id] = (quizCountMap[q.teaching_assignment_id] || 0) + 1;
+            }
+          });
+        }
+      }
+
+      // Enrich cohorts
+      const enrichedCohorts: TeachingCohort[] = cohorts.map((c) => ({
+        ...c,
+        student_count: studentCountMap[c.classroom_id] || 0,
+        assignment_count: asgCountMap[c.id] || 0,
+        quiz_count: quizCountMap[c.id] || 0,
+      }));
+
+      setTeachingAssignments(enrichedCohorts);
+      setTotalStudentsCount(allUniqueStudentIds.size);
+      setTotalAssignmentsCount(totalAsgs);
+      setTotalQuizzesCount(totalQzs);
+    } catch (err: any) {
+      console.error("Failed to fetch faculty dashboard data:", err);
+      toast.error("Failed to load teaching assignments");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFacultyDashboardData();
+  }, [user]);
 
   const handlePostAnnouncement = () => {
     if (!announcementText.trim()) return;
-    toast.success("Announcement broadcasted! Synapse AI has synchronized action items to student calendars.");
+    toast.success("Announcement broadcasted to your assigned teaching cohorts!");
     setAnnounceOpen(false);
     setAnnouncementText("");
   };
 
-  const handleGenerateRevisionQuiz = () => {
-    setGeneratingQuiz(true);
-    setTimeout(() => {
-      setGeneratingQuiz(false);
-      toast.success("AI generated a 3-question targeted 2NF Checkpoint Quiz and scheduled it for DBMS - CSE 3A!");
-      navigate("/faculty/quizzes");
-    }, 1200);
-  };
+  // Group cohorts by subject
+  const cohortsBySubject = teachingAssignments.reduce((acc, cohort) => {
+    const key = cohort.subject_name;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(cohort);
+    return acc;
+  }, {} as Record<string, TeachingCohort[]>);
 
   return (
     <FacultyLayout>
@@ -73,15 +215,17 @@ export default function FacultyDashboardPage() {
           <div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-xs">
-                Instructor Administration
+                Faculty Portal
               </Badge>
               <span className="text-xs text-muted-foreground">• Academic Year 2026-27</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-1">
-              Good morning, {instructorName}
+              Welcome back, {instructorName}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Department of Computer Science & Engineering • 2 active cohorts under instruction
+              {teachingAssignments.length > 0
+                ? `${teachingAssignments.length} active teaching assignment${teachingAssignments.length > 1 ? "s" : ""} across ${Object.keys(cohortsBySubject).length} subject${Object.keys(cohortsBySubject).length > 1 ? "s" : ""}`
+                : "No active teaching assignments currently allocated"}
             </p>
           </div>
 
@@ -97,20 +241,20 @@ export default function FacultyDashboardPage() {
                 <DialogHeader>
                   <DialogTitle>Post Course Announcement</DialogTitle>
                   <DialogDescription>
-                    Broadcasting to DBMS - CSE 3A. Synapse NLP will automatically parse deadlines and create official student tasks.
+                    Broadcasting message to students enrolled in your teaching cohorts.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3 py-2">
                   <Textarea
                     value={announcementText}
                     onChange={(e) => setAnnouncementText(e.target.value)}
-                    placeholder="e.g. Please submit Assignment 3 by Monday at 11:59 PM. Diagnostic quiz on 2NF scheduled for Friday."
+                    placeholder="e.g. Please review the updated lecture notes on Normalization. Assessment scheduled next Tuesday."
                     rows={4}
                   />
                 </div>
                 <DialogFooter>
                   <Button onClick={handlePostAnnouncement} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-                    Publish & Sync Tasks
+                    Publish to Cohorts
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -119,7 +263,7 @@ export default function FacultyDashboardPage() {
             <Link to="/faculty/assignments">
               <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/25">
                 <Plus className="h-4 w-4" />
-                Create Assignment
+                Manage Coursework
               </Button>
             </Link>
           </div>
@@ -130,11 +274,15 @@ export default function FacultyDashboardPage() {
           <Card className="shadow-card border-slate-200 dark:border-slate-800">
             <CardContent className="p-5 space-y-1">
               <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-semibold uppercase tracking-wider">Total Classrooms</span>
-                <BookOpen className="h-4 w-4 text-indigo-600" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Teaching Cohorts</span>
+                <School className="h-4 w-4 text-indigo-600" />
               </div>
-              <div className="text-3xl font-extrabold text-foreground">2</div>
-              <p className="text-xs text-muted-foreground">DBMS - CSE 3A & OS - CSE 3A</p>
+              <div className="text-3xl font-extrabold text-foreground">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : teachingAssignments.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Assigned by institutional administrator
+              </p>
             </CardContent>
           </Card>
 
@@ -144,304 +292,143 @@ export default function FacultyDashboardPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider">Total Students</span>
                 <Users className="h-4 w-4 text-blue-600" />
               </div>
-              <div className="text-3xl font-extrabold text-foreground">120</div>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">96% active engagement</p>
+              <div className="text-3xl font-extrabold text-foreground">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : totalStudentsCount}
+              </div>
+              <p className="text-xs text-muted-foreground">Across your assigned classroom sections</p>
             </CardContent>
           </Card>
 
           <Card className="shadow-card border-slate-200 dark:border-slate-800">
             <CardContent className="p-5 space-y-1">
               <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-semibold uppercase tracking-wider">Upcoming Assignments</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Assignments</span>
                 <ClipboardList className="h-4 w-4 text-amber-500" />
               </div>
-              <div className="text-3xl font-extrabold text-foreground">3</div>
-              <p className="text-xs text-muted-foreground">Auto-synced to student task lists</p>
+              <div className="text-3xl font-extrabold text-foreground">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : totalAssignmentsCount}
+              </div>
+              <p className="text-xs text-muted-foreground">Active coursework published</p>
             </CardContent>
           </Card>
 
           <Card className="shadow-card border-slate-200 dark:border-slate-800">
             <CardContent className="p-5 space-y-1">
               <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-semibold uppercase tracking-wider">Pending Grading</span>
-                <FileCheck2 className="h-4 w-4 text-rose-500" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Quizzes</span>
+                <HelpCircle className="h-4 w-4 text-emerald-500" />
               </div>
-              <div className="text-3xl font-extrabold text-foreground">14</div>
-              <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Assignment 3 submissions</p>
+              <div className="text-3xl font-extrabold text-foreground">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : totalQuizzesCount}
+              </div>
+              <p className="text-xs text-muted-foreground">Diagnostic assessments published</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* CLASS OVERVIEW SECTION */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">CLASS OVERVIEW</h2>
-            <Link to="/faculty/classrooms" className="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-1">
-              View All Classrooms <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* DBMS Class Card */}
-            <Card className="shadow-card border-indigo-500/20 hover:border-indigo-500/40 transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-[10px] mb-1">
-                      Code: DBMS3A26
-                    </Badge>
-                    <CardTitle className="text-lg font-bold">DBMS - CSE 3A</CardTitle>
-                    <CardDescription>CS301 • Database Management Systems</CardDescription>
-                  </div>
-                  <Badge className="bg-indigo-600 text-white text-xs">Lead Faculty</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-2 text-center p-3 rounded-2xl bg-muted/40 border">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Students</div>
-                    <div className="text-lg font-bold text-foreground">62</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Avg Performance</div>
-                    <div className="text-lg font-bold text-indigo-600">76%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Attendance</div>
-                    <div className="text-lg font-bold text-emerald-600">82%</div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Syllabus Coverage: Unit 3 (Normalization & Indexing)</span>
-                    <span className="font-semibold text-foreground">68%</span>
-                  </div>
-                  <Progress value={68} className="h-2 bg-muted" />
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t text-xs">
-                  <span className="text-muted-foreground">Next lecture: Tomorrow 10:00 AM</span>
-                  <Link to="/faculty/classrooms">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs text-indigo-600 hover:text-indigo-700">
-                      Open Classroom
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* OS Class Card */}
-            <Card className="shadow-card border-slate-200 dark:border-slate-800 hover:border-slate-300 transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <Badge variant="outline" className="bg-slate-500/10 text-slate-600 border-slate-500/20 text-[10px] mb-1">
-                      Code: OSCSE3A
-                    </Badge>
-                    <CardTitle className="text-lg font-bold">OS - CSE 3A</CardTitle>
-                    <CardDescription>CS302 • Operating Systems & Virtual Memory</CardDescription>
-                  </div>
-                  <Badge variant="outline" className="text-xs">Co-Faculty</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-2 text-center p-3 rounded-2xl bg-muted/40 border">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Students</div>
-                    <div className="text-lg font-bold text-foreground">58</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Avg Performance</div>
-                    <div className="text-lg font-bold text-foreground">71%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Attendance</div>
-                    <div className="text-lg font-bold text-emerald-600">79%</div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Syllabus Coverage: Unit 2 (Process Synchronization)</span>
-                    <span className="font-semibold text-foreground">55%</span>
-                  </div>
-                  <Progress value={55} className="h-2 bg-muted" />
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t text-xs">
-                  <span className="text-muted-foreground">Next lab: Thursday 2:00 PM</span>
-                  <Link to="/faculty/classrooms">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                      Open Classroom
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* ACADEMIC INSIGHTS & SUPPORT SIGNALS (Supportive, Non-Alarming Language) */}
-        <div className="space-y-4">
+        {/* "MY TEACHING" SECTION - GROUPED BY SUBJECT -> CLASSROOM COHORTS */}
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-foreground">ACADEMIC INSIGHTS</h2>
+              <h2 className="text-xl font-bold text-foreground">My Teaching Assignments</h2>
               <p className="text-xs text-muted-foreground">
-                Constructive support signals based on attendance patterns, submission rates, and diagnostic checkpoints
+                Institutional subjects and classroom cohorts assigned to your faculty profile
               </p>
             </div>
-            <Link to="/faculty/students">
-              <Button variant="outline" size="sm" className="text-xs gap-1.5 border-indigo-500/30">
-                <Users className="h-3.5 w-3.5 text-indigo-600" />
-                Manage All 120 Students
-              </Button>
+            <Link to="/faculty/classrooms" className="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-1">
+              View Classrooms Directory <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card className="shadow-card border-amber-500/30 bg-amber-500/5">
-              <CardContent className="p-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                    Additional Support
-                  </span>
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+          {loading ? (
+            <div className="flex items-center justify-center p-12 bg-muted/20 rounded-2xl border border-dashed">
+              <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+            </div>
+          ) : teachingAssignments.length === 0 ? (
+            <Card className="border-dashed border-2 bg-muted/20">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600">
+                  <BookOpen className="h-7 w-7" />
                 </div>
-                <div className="text-3xl font-extrabold text-foreground">7</div>
-                <p className="text-xs text-muted-foreground">
-                  7 students may benefit from additional support (e.g. Rahul Kumar, Alex Chen on 2NF)
-                </p>
-                <Link to="/faculty/students?filter=needs_support" className="inline-block pt-1 text-xs font-semibold text-amber-600 hover:underline">
-                  Review support candidates →
-                </Link>
+                <div className="max-w-md space-y-1">
+                  <h3 className="text-base font-bold text-foreground">No Teaching Cohorts Assigned</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Your institutional administrator has not yet assigned you to any subject or classroom cohort.
+                    Once assigned, your classes, student rosters, assignments, and quizzes will appear here automatically.
+                  </p>
+                </div>
               </CardContent>
             </Card>
+          ) : (
+            <div className="space-y-8">
+              {Object.entries(cohortsBySubject).map(([subjectName, cohorts]) => (
+                <div key={subjectName} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-indigo-600 text-white text-xs px-2.5 py-0.5">
+                      {cohorts[0]?.subject_code || "SUB"}
+                    </Badge>
+                    <h3 className="text-lg font-bold text-foreground">{subjectName}</h3>
+                    <span className="text-xs text-muted-foreground">
+                      ({cohorts.length} section{cohorts.length > 1 ? "s" : ""})
+                    </span>
+                  </div>
 
-            <Card className="shadow-card border-blue-500/30 bg-blue-500/5">
-              <CardContent className="p-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-                    Routine Monitoring
-                  </span>
-                  <Users className="h-4 w-4 text-blue-500" />
-                </div>
-                <div className="text-3xl font-extrabold text-foreground">14</div>
-                <p className="text-xs text-muted-foreground">
-                  14 students require monitoring based on recent assignment or quiz signals
-                </p>
-                <Link to="/faculty/students?filter=monitoring" className="inline-block pt-1 text-xs font-semibold text-blue-600 hover:underline">
-                  View monitored cohort →
-                </Link>
-              </CardContent>
-            </Card>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {cohorts.map((cohort) => (
+                      <Card
+                        key={cohort.id}
+                        className="shadow-card border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 hover:shadow-md transition-all flex flex-col justify-between"
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <CardTitle className="text-base font-bold text-foreground">
+                                {cohort.classroom?.name || "Classroom"}
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                {cohort.classroom?.course} • {cohort.classroom?.branch} • Year {cohort.classroom?.year} (Sec {cohort.classroom?.section})
+                              </CardDescription>
+                            </div>
+                            <Badge variant="outline" className="text-[10px] bg-slate-500/10">
+                              {cohort.classroom?.academic_year || "2026-27"}
+                            </Badge>
+                          </div>
+                        </CardHeader>
 
-            <Card className="shadow-card border-emerald-500/30 bg-emerald-500/5">
-              <CardContent className="p-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-                    Progressing Well
-                  </span>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                </div>
-                <div className="text-3xl font-extrabold text-foreground">41</div>
-                <p className="text-xs text-muted-foreground">
-                  41 students consistently on track across attendance and quiz mastery
-                </p>
-                <Link to="/faculty/students?filter=on_track" className="inline-block pt-1 text-xs font-semibold text-emerald-600 hover:underline">
-                  View high performers →
-                </Link>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                        <CardContent className="space-y-4">
+                          <div className="grid grid-cols-3 gap-2 text-center p-2.5 rounded-xl bg-muted/40 border text-xs">
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Students</div>
+                              <div className="text-base font-extrabold text-foreground">{cohort.student_count || 0}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Assignments</div>
+                              <div className="text-base font-extrabold text-amber-600">{cohort.assignment_count || 0}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Quizzes</div>
+                              <div className="text-base font-extrabold text-emerald-600">{cohort.quiz_count || 0}</div>
+                            </div>
+                          </div>
 
-        {/* TOPIC MASTERY & AI INSIGHT (Evidence-backed) */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Class Topic Difficulty Heatmap */}
-          <Card className="shadow-card">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-bold">Class Topic Mastery: DBMS</CardTitle>
-                  <CardDescription>Aggregate performance across 62 students</CardDescription>
+                          <div className="pt-2 border-t flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Classroom Cohort</span>
+                            <Button
+                              onClick={() => navigate(`/faculty/teaching/${cohort.id}`)}
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+                            >
+                              Manage Teaching <ArrowRight className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-xs">Spring Checkpoint</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="font-semibold text-foreground">Structured Query Language (SQL)</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">84% 🟢</span>
-                </div>
-                <Progress value={84} className="h-2 bg-emerald-500/20" />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="font-semibold text-foreground">Transactions & ACID Properties</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">76% 🟢</span>
-                </div>
-                <Progress value={76} className="h-2 bg-emerald-500/20" />
-              </div>
-
-              <div className="space-y-2 p-3 rounded-xl border border-rose-500/30 bg-rose-500/5">
-                <div className="flex justify-between text-sm">
-                  <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                    <AlertTriangle className="h-4 w-4" />
-                    Normalization & Decomposition
-                  </span>
-                  <span className="font-extrabold text-rose-600 dark:text-rose-400">53% ⚠️</span>
-                </div>
-                <Progress value={53} className="h-2 bg-rose-500/20" />
-                <p className="text-xs text-muted-foreground pt-1">
-                  18 students below the configured support threshold (46% struggle on 2NF partial dependencies).
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* AI Insights & Evidence-Backed Recommendation */}
-          <Card className="shadow-card border-indigo-500/30 bg-gradient-to-br from-card via-card to-indigo-500/5">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-                <Lightbulb className="h-5 w-5" />
-                <CardTitle className="text-base font-bold">AI Diagnostic Insight</CardTitle>
-              </div>
-              <CardDescription>Evidence-based curriculum recommendation</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 rounded-2xl border bg-card/80 space-y-2">
-                <div className="text-sm font-bold text-foreground">
-                  "Normalization is currently the lowest-performing topic in DBMS."
-                </div>
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div className="font-semibold text-foreground/80">Observed Evidence:</div>
-                  <div>• Average topic performance: 53%</div>
-                  <div>• 18 students scored below 50% on Quiz 3</div>
-                  <div>• Primary bottleneck: Identifying partial dependencies on composite primary keys (42% accuracy)</div>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20 space-y-2">
-                <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                  Recommended Action
-                </div>
-                <p className="text-xs text-foreground">
-                  Publish a 3-question targeted 2NF checkpoint quiz and assign a 15-minute Socratic review session.
-                </p>
-                <Button
-                  onClick={handleGenerateRevisionQuiz}
-                  disabled={generatingQuiz}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs h-9 gap-2 shadow-sm shadow-indigo-600/20"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {generatingQuiz ? "Generating Quiz with Synapse AI..." : "Generate Revision Quiz"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </FacultyLayout>

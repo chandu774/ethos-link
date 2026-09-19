@@ -22,6 +22,9 @@ const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminFacultyPage = lazy(() => import("./pages/admin/AdminFacultyPage"));
 const AdminStudentsPage = lazy(() => import("./pages/admin/AdminStudentsPage"));
+const AdminClassroomsPage = lazy(() => import("./pages/admin/AdminClassroomsPage"));
+const AdminClassroomDetailPage = lazy(() => import("./pages/admin/AdminClassroomDetailPage"));
+const AdminTeachingAssignmentsPage = lazy(() => import("./pages/admin/AdminTeachingAssignmentsPage"));
 
 // Student Pages
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -55,7 +58,9 @@ const FacultyStudentDetail = lazy(() => import("./pages/faculty/FacultyStudentDe
 const FacultyAssignmentsPage = lazy(() => import("./pages/faculty/FacultyAssignmentsPage"));
 const FacultyQuizzesPage = lazy(() => import("./pages/faculty/FacultyQuizzesPage"));
 const FacultyAnalyticsPage = lazy(() => import("./pages/faculty/FacultyAnalyticsPage"));
+const FacultyAttendancePage = lazy(() => import("./pages/faculty/FacultyAttendancePage"));
 const FacultyClassroomsPage = lazy(() => import("./pages/faculty/FacultyClassroomsPage"));
+const FacultyTeachingDetailPage = lazy(() => import("./pages/faculty/FacultyTeachingDetailPage"));
 
 const queryClient = new QueryClient();
 
@@ -87,7 +92,7 @@ const App = () => (
                 <Route path="/auth" element={<Navigate to="/login" replace />} />
                 <Route path="/student/login" element={<Navigate to="/login" replace />} />
                 <Route path="/faculty/login" element={<Navigate to="/login" replace />} />
-                <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+                <Route path="/admin/login" element={<AdminLogin />} />
                 <Route path="/staff/login" element={<Navigate to="/login" replace />} />
 
                 <Route
@@ -162,7 +167,7 @@ const App = () => (
                   path="/student/assignments/:assignmentId"
                   element={
                     <StudentRoute>
-                      <AssignmentDetail />
+                      <Assignments />
                     </StudentRoute>
                   }
                 />
@@ -267,6 +272,14 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/faculty/teaching/:assignmentId"
+                  element={
+                    <FacultyRoute>
+                      <FacultyTeachingDetailPage />
+                    </FacultyRoute>
+                  }
+                />
+                <Route
                   path="/faculty/classrooms"
                   element={
                     <FacultyRoute>
@@ -326,7 +339,7 @@ const App = () => (
                   path="/faculty/attendance"
                   element={
                     <FacultyRoute>
-                      <FacultyAnalyticsPage />
+                      <FacultyAttendancePage />
                     </FacultyRoute>
                   }
                 />
@@ -375,18 +388,38 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/admin/departments"
+                  path="/admin/classrooms"
                   element={
                     <AdminRoute>
-                      <AdminDashboard />
+                      <AdminClassroomsPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/classrooms/:classroomId"
+                  element={
+                    <AdminRoute>
+                      <AdminClassroomDetailPage />
                     </AdminRoute>
                   }
                 />
                 <Route
                   path="/admin/students"
+                  element={<Navigate to="/admin/classrooms" replace />}
+                />
+                <Route
+                  path="/admin/teaching-assignments"
                   element={
                     <AdminRoute>
-                      <AdminStudentsPage />
+                      <AdminTeachingAssignmentsPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/departments"
+                  element={
+                    <AdminRoute>
+                      <AdminClassroomsPage />
                     </AdminRoute>
                   }
                 />

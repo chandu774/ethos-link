@@ -463,7 +463,7 @@ export default function MyLearning() {
                 <Button
                   className="w-full justify-between h-auto py-2.5 bg-primary text-primary-foreground font-medium"
                   onClick={() => {
-                    navigate("/assessments/quiz-2nf-targeted");
+                    navigate("/student/quizzes");
                   }}
                 >
                   <div className="flex items-center gap-2.5 text-left">
@@ -471,8 +471,8 @@ export default function MyLearning() {
                       <FileCheck2 className="h-4 w-4" />
                     </div>
                     <div>
-                      <span className="block text-xs font-semibold">Take 3-Question Targeted Checkpoint</span>
-                      <span className="block text-[11px] text-primary-foreground/80">Instantly boosts concept mastery upon correct answers</span>
+                      <span className="block text-xs font-semibold">Open Classroom Assessments</span>
+                      <span className="block text-[11px] text-primary-foreground/80">Quizzes and checkpoints published by your faculty</span>
                     </div>
                   </div>
                   <ArrowRight className="h-4 w-4" />

@@ -23,7 +23,7 @@ export default function AdminDashboard() {
     facultyCount: 0,
     studentCount: 0,
     classroomCount: 0,
-    activeQuizzes: 0,
+    teachingCount: 0,
     departments: ["Computer Science & Engineering", "Information Technology", "Electronics & Comm."],
   });
   const [recentFaculty, setRecentFaculty] = useState<any[]>([]);
@@ -32,18 +32,17 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function loadMetrics() {
       try {
-        // Query counts from profiles and courses
         const [
           { count: facultyCount },
           { count: studentCount },
           { count: classroomCount },
-          { count: quizCount },
+          { count: teachingCount },
           { data: facultyList },
         ] = await Promise.all([
           supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "faculty"),
           supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
-          supabase.from("courses").select("id", { count: "exact", head: true }),
-          supabase.from("quizzes").select("id", { count: "exact", head: true }),
+          supabase.from("classrooms").select("id", { count: "exact", head: true }),
+          supabase.from("teaching_assignments").select("id", { count: "exact", head: true }),
           supabase
             .from("profiles")
             .select("id, name, email, faculty_id, department, designation, created_at")
@@ -56,7 +55,7 @@ export default function AdminDashboard() {
           facultyCount: facultyCount ?? 0,
           studentCount: studentCount ?? 0,
           classroomCount: classroomCount ?? 0,
-          activeQuizzes: quizCount ?? 0,
+          teachingCount: teachingCount ?? 0,
           departments: ["Computer Science & Engineering", "Information Technology", "Electronics & Comm."],
         });
         setRecentFaculty(facultyList || []);
@@ -89,9 +88,9 @@ export default function AdminDashboard() {
 
           <div className="flex items-center gap-2.5">
             <Button asChild variant="outline" size="sm" className="text-xs font-semibold gap-1.5 border-rose-200 dark:border-rose-900">
-              <Link to="/admin/students">
-                <GraduationCap className="h-4 w-4 text-rose-600" />
-                Manage Students
+              <Link to="/admin/classrooms">
+                <Building2 className="h-4 w-4 text-rose-600" />
+                Manage Classrooms
               </Link>
             </Button>
             <Button asChild size="sm" className="bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/25 text-xs font-semibold gap-1.5">
@@ -103,8 +102,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 4 Key Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 3 Key Metrics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link to="/admin/faculty" className="block">
             <Card className="border shadow-sm hover:border-rose-500/30 transition-all cursor-pointer h-full">
               <CardContent className="p-4 flex items-center justify-between">
@@ -123,55 +122,41 @@ export default function AdminDashboard() {
             </Card>
           </Link>
 
-          <Link to="/admin/students" className="block">
+          <Link to="/admin/classrooms" className="block">
             <Card className="border shadow-sm hover:border-rose-500/30 transition-all cursor-pointer h-full">
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Enrolled Students</p>
-                  <div className="text-2xl font-bold">{stats.studentCount}</div>
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-medium">
-                    <GraduationCap className="h-3 w-3 text-primary" />
-                    <span>Roll Number Auth</span>
+                  <p className="text-xs font-medium text-muted-foreground">Classrooms & Cohorts</p>
+                  <div className="text-2xl font-bold">{stats.classroomCount}</div>
+                  <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                    <Building2 className="h-3 w-3" />
+                    <span>Real Cohorts</span>
                   </div>
                 </div>
-                <div className="h-11 w-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <GraduationCap className="h-6 w-6" />
+                <div className="h-11 w-11 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                  <Building2 className="h-6 w-6" />
                 </div>
               </CardContent>
             </Card>
           </Link>
 
-          <Card className="border shadow-sm hover:border-rose-500/30 transition-all">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Active Classrooms</p>
-                <div className="text-2xl font-bold">{stats.classroomCount}</div>
-                <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-medium">
-                  <BookOpen className="h-3 w-3 text-indigo-600" />
-                  <span>Faculty-created</span>
+          <Link to="/admin/teaching-assignments" className="block">
+            <Card className="border shadow-sm hover:border-rose-500/30 transition-all cursor-pointer h-full">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Teaching Allocations</p>
+                  <div className="text-2xl font-bold">{stats.teachingCount}</div>
+                  <div className="flex items-center gap-1 text-[11px] text-indigo-600 font-medium">
+                    <BookOpen className="h-3 w-3" />
+                    <span>Subject-Scoped</span>
+                  </div>
                 </div>
-              </div>
-              <div className="h-11 w-11 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-                <BookOpen className="h-6 w-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-sm hover:border-rose-500/30 transition-all">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Active Departments</p>
-                <div className="text-2xl font-bold">{stats.departments.length}</div>
-                <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
-                  <Building2 className="h-3 w-3" />
-                  <span>Fully Operational</span>
+                <div className="h-11 w-11 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+                  <BookOpen className="h-6 w-6" />
                 </div>
-              </div>
-              <div className="h-11 w-11 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                <Building2 className="h-6 w-6" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* 2-Column Institutional Structure & Hierarchy Validation */}
