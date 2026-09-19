@@ -23,6 +23,9 @@ import {
   Eye,
   Volume2,
   Captions,
+  Mic,
+  FileText,
+  Sliders,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,11 +36,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { toast } from "sonner";
 
 export default function StudentProfile() {
   const { profile, user } = useAuth();
   const synapse = useSynapse();
+  const { preferences, updatePreferences } = useAccessibility();
 
   const [activeTab, setActiveTab] = useState("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -500,81 +506,198 @@ export default function StudentProfile() {
         {/* PREFERENCES & ACCESSIBILITY TAB */}
         <TabsContent value="preferences" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card className="shadow-card">
+            {/* Assistive Navigation & Voice */}
+            <Card className="shadow-card border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  Preferred Learning Modalities
+                  <Mic className="h-5 w-5 text-primary" />
+                  Voice & Assistive Features
                 </CardTitle>
-                <CardDescription>Personalized content format settings for lectures and review</CardDescription>
+                <CardDescription>
+                  Hands-free voice control, narration, and lecture text alternatives
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-3">
-                    <Video className="h-4 w-4 text-primary" />
-                    <div>
-                      <div className="text-sm font-semibold">Video + Timestamps</div>
-                      <div className="text-xs text-muted-foreground">Visual diagrams and chapter navigation</div>
+              <CardContent className="space-y-4">
+                {/* Voice Assistance Switch */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <Mic className="h-4 w-4 text-primary" />
+                      <span>Voice Assistance (Alt + V)</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Hands-free spoken commands for navigation, attendance queries, and quiz interaction.
                     </div>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 text-xs">Primary</Badge>
+                  <Switch
+                    checked={preferences.voice_assistance_enabled}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ voice_assistance_enabled: checked })
+                    }
+                    aria-label="Toggle voice assistance"
+                  />
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-3">
-                    <FileCheck2 className="h-4 w-4 text-accent" />
-                    <div>
-                      <div className="text-sm font-semibold">Interactive Practice Quizzes</div>
-                      <div className="text-xs text-muted-foreground">Targeted diagnostic checkpoints</div>
+                {/* On-Demand Transcripts Switch */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-indigo-500" />
+                      <span>On-Demand Lecture Transcripts</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Generate timestamped transcripts, summaries, and key concepts for faculty lectures.
                     </div>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 text-xs">Active</Badge>
+                  <Switch
+                    checked={preferences.transcript_assistance_enabled}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ transcript_assistance_enabled: checked })
+                    }
+                    aria-label="Toggle on-demand lecture transcripts"
+                  />
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-3">
-                    <BookOpen className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <div className="text-sm font-semibold">Structured Reading Notes</div>
-                      <div className="text-xs text-muted-foreground">Concise takeaways and summaries</div>
+                {/* Text-to-Speech Narration */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <Volume2 className="h-4 w-4 text-accent" />
+                      <span>Text-to-Speech (TTS) Read Aloud</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Enable spoken audio narration for quiz questions and academic summaries.
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-xs">Enabled</Badge>
+                  <Switch
+                    checked={preferences.text_to_speech_enabled}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ text_to_speech_enabled: checked })
+                    }
+                    aria-label="Toggle text to speech narration"
+                  />
+                </div>
+
+                {/* Speech Rate Controls */}
+                <div className="p-3.5 rounded-xl border bg-card space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <Sliders className="h-4 w-4 text-muted-foreground" />
+                      <span>Speech Narration Speed</span>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {preferences.speech_rate || 1.0}x
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    {[0.8, 1.0, 1.2, 1.5].map((rate) => (
+                      <Button
+                        key={rate}
+                        type="button"
+                        size="sm"
+                        variant={preferences.speech_rate === rate ? "default" : "outline"}
+                        className="flex-1 text-xs h-7"
+                        onClick={() => updatePreferences({ speech_rate: rate })}
+                      >
+                        {rate}x
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="shadow-card">
+            {/* Visual & Motion Accommodations */}
+            <Card className="shadow-card border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-bold flex items-center gap-2">
                   <Accessibility className="h-5 w-5 text-primary" />
-                  Active Inclusive Accessibility Preferences
+                  Visual & Display Accommodations
                 </CardTitle>
-                <CardDescription>Tailored viewing and listening accommodations</CardDescription>
+                <CardDescription>
+                  Contrast, typography sizing, and motion sensitivity preferences
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-2.5">
-                    <Captions className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Live Synchronized Captions (CC)</span>
+              <CardContent className="space-y-4">
+                {/* High Contrast Mode */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <Eye className="h-4 w-4 text-emerald-500" />
+                      <span>High Contrast Mode</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Boost border definitions and contrast for improved readability.
+                    </div>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 text-xs">Enabled</Badge>
+                  <Switch
+                    checked={preferences.high_contrast}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ high_contrast: checked })
+                    }
+                    aria-label="Toggle high contrast mode"
+                  />
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-2.5">
-                    <Eye className="h-4 w-4 text-indigo-500" />
-                    <span className="text-sm font-medium">Dedicated Sign Language Stream (ASL)</span>
+                {/* Text Sizing */}
+                <div className="p-3.5 rounded-xl border bg-card space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Base Text Sizing</div>
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {preferences.text_size || "normal"}
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 text-xs">Enabled</Badge>
+                  <div className="flex items-center gap-2 pt-1">
+                    {(["normal", "large", "extra-large"] as const).map((size) => (
+                      <Button
+                        key={size}
+                        type="button"
+                        size="sm"
+                        variant={preferences.text_size === size ? "default" : "outline"}
+                        className="flex-1 text-xs h-7 capitalize"
+                        onClick={() => updatePreferences({ text_size: size })}
+                      >
+                        {size === "normal" ? "Standard" : size === "large" ? "Large" : "Extra Large"}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-card">
-                  <div className="flex items-center gap-2.5">
-                    <Volume2 className="h-4 w-4 text-accent" />
-                    <span className="text-sm font-medium">Text-to-Speech (TTS) Narration</span>
+                {/* Reduced Motion */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold">Reduced Motion</div>
+                    <div className="text-xs text-muted-foreground">
+                      Minimize screen animations, slides, and background effects.
+                    </div>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 text-xs">1.0x Rate</Badge>
+                  <Switch
+                    checked={preferences.reduced_motion}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ reduced_motion: checked })
+                    }
+                    aria-label="Toggle reduced motion"
+                  />
+                </div>
+
+                {/* Synchronized Captions Preference */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+                  <div className="space-y-0.5 max-w-[80%]">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <Captions className="h-4 w-4 text-primary" />
+                      <span>Prefer Closed Captions (CC)</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Default video players to display subtitles and caption tracks.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={preferences.captions_enabled}
+                    onCheckedChange={(checked) =>
+                      updatePreferences({ captions_enabled: checked })
+                    }
+                    aria-label="Toggle closed captions"
+                  />
                 </div>
               </CardContent>
             </Card>

@@ -81,6 +81,9 @@ function RoleRedirect({ studentPath, facultyPath }: { studentPath: string; facul
   return <Navigate to={role === "faculty" ? facultyPath : studentPath} replace />;
 }
 
+import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
+import { VoiceAssistantProvider } from "@/contexts/VoiceAssistantContext";
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -89,9 +92,11 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-            <ErrorBoundary>
-              <Suspense fallback={<PageLoader />}>
-                <Routes>
+            <AccessibilityProvider>
+              <VoiceAssistantProvider>
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoader />}>
+                    <Routes>
                 {/* Public Entry Points */}
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Auth />} />
@@ -575,6 +580,8 @@ const App = () => (
               </Routes>
             </Suspense>
           </ErrorBoundary>
+              </VoiceAssistantProvider>
+            </AccessibilityProvider>
         </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

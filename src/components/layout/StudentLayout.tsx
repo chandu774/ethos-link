@@ -31,6 +31,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSynapse } from "@/hooks/useSynapse";
 import { ForceChangePasswordModal } from "@/components/auth/ForceChangePasswordModal";
+import { VoiceControlWidget } from "@/components/accessibility/VoiceControlWidget";
 import { toast } from "sonner";
 
 interface StudentLayoutProps {
@@ -291,6 +292,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
         <main className="flex-1">
           <ForceChangePasswordModal />
           {children}
+          <VoiceControlWidget />
         </main>
 
         {/* Mobile Student Bottom Navigation */}

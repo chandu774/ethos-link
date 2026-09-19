@@ -205,3 +205,35 @@
     font-size: 16px;
   }
 }
+
+/* Accessibility Enhancement Classes */
+html.high-contrast {
+  --foreground: 0 0% 0%;
+  --card-foreground: 0 0% 0%;
+  --border: 0 0% 20%;
+  contrast: 125%;
+}
+
+html.dark.high-contrast {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 5%;
+  --card-foreground: 0 0% 100%;
+  --border: 0 0% 40%;
+}
+
+html.text-size-large {
+  font-size: 112.5%;
+}
+
+html.text-size-xl {
+  font-size: 125%;
+}
+
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
