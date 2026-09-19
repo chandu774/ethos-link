@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.opportunity-discover]
 verify_jwt = false
+
+[functions.youtube-recommend]
+verify_jwt = false

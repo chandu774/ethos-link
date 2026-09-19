@@ -36,6 +36,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { DemoRecommendation } from "@/data/demoData";
 import { cn } from "@/lib/utils";
+import { RecommendedLearningSection } from "@/components/dashboard/RecommendedLearningSection";
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -460,6 +461,9 @@ export default function Dashboard() {
             })}
           </div>
         </div>
+
+        {/* PERSONALIZED YOUTUBE LEARNING RECOMMENDATIONS */}
+        <RecommendedLearningSection />
 
         {/* Weekly Workload & Quick Navigation Row */}
         <div className="grid gap-4 md:grid-cols-3">

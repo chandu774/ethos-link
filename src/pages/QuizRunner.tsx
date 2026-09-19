@@ -32,6 +32,7 @@ import {
   PostQuizAnalysisResult,
   QuestionMistake,
 } from "@/services/postQuizAnalysisService";
+import { youtubeRecommendationService } from "@/services/youtubeRecommendationService";
 import { toast } from "sonner";
 
 interface QuizDetail {
@@ -467,6 +468,24 @@ export default function QuizRunner() {
             last_assessed_at: submittedAt,
           });
         }
+
+        // Closed learning loop: If student demonstrates mastery (>= 70%), resolve active recommendation
+        if (cb.accuracy >= 70) {
+          await youtubeRecommendationService.resolveRecommendationAfterQuiz(
+            user.id,
+            cb.concept,
+            quiz.id
+          );
+        }
+      }
+
+      // If overall topic accuracy was high, resolve any topic-level recommendation
+      if (percentage >= 70 && quiz.topic) {
+        await youtubeRecommendationService.resolveRecommendationByTopic(
+          user.id,
+          quiz.topic,
+          quiz.id
+        );
       }
 
       setAttemptResult({
