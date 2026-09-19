@@ -585,33 +585,46 @@ export default function QuizRunner() {
       return;
     }
 
-    registerQuizHandlers({
-      readQuestion: readCurrentQuestion,
-      selectOption: (optIndex: number) => {
-        const q = questions[currentIndex];
-        if (q) {
-          handleSelectOption(q.id, optIndex);
-        }
+    const currentQ = questions[currentIndex];
+    registerQuizHandlers(
+      {
+        readQuestion: readCurrentQuestion,
+        selectOption: (optIndex: number) => {
+          if (currentQ) {
+            handleSelectOption(currentQ.id, optIndex);
+          }
+        },
+        nextQuestion: () => {
+          if (currentIndex < questions.length - 1) {
+            setCurrentIndex((prev) => prev + 1);
+          }
+        },
+        prevQuestion: () => {
+          if (currentIndex > 0) {
+            setCurrentIndex((prev) => prev - 1);
+          }
+        },
+        submitQuiz: () => {
+          handleSubmitQuiz();
+        },
       },
-      nextQuestion: () => {
-        if (currentIndex < questions.length - 1) {
-          setCurrentIndex((prev) => prev + 1);
-        }
-      },
-      prevQuestion: () => {
-        if (currentIndex > 0) {
-          setCurrentIndex((prev) => prev - 1);
-        }
-      },
-      submitQuiz: () => {
-        handleSubmitQuiz();
-      },
-    });
+      {
+        title: quiz?.title,
+        subject: quiz?.subject,
+        topic: quiz?.topic,
+        currentQuestionIndex: currentIndex,
+        totalQuestions: questions.length,
+        currentQuestionText: currentQ?.question,
+        options: (currentQ?.options || []).map((o: any) => getOptionText(o)),
+        hasAnswered: currentQ ? selectedAnswers[currentQ.id] !== undefined : false,
+      }
+    );
 
     return () => {
       registerQuizHandlers(null);
     };
   }, [
+    quiz,
     questions,
     currentIndex,
     attemptResult,

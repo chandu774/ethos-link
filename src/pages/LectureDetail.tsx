@@ -123,17 +123,31 @@ export default function LectureDetail() {
 
   // Register voice assistant lecture handlers
   useEffect(() => {
-    registerLectureHandlers({
-      generateTranscript: handleGenerateTranscript,
-      readSummary: () => {
-        if (transcript?.summary) {
-          speak(transcript.summary);
-        } else {
-          speak("No transcript summary is available yet. Please generate a transcript first.");
-        }
+    if (!lecture) {
+      registerLectureHandlers(null);
+      return;
+    }
+
+    registerLectureHandlers(
+      {
+        generateTranscript: handleGenerateTranscript,
+        readSummary: () => {
+          if (transcript?.summary) {
+            speak(transcript.summary);
+          } else {
+            speak("No transcript summary is available yet. Please generate a transcript first.");
+          }
+        },
+        seekTo: handleSeekTo,
       },
-      seekTo: handleSeekTo,
-    });
+      {
+        title: lecture.title,
+        subject: lecture.subjectName,
+        topic: lecture.topic,
+        duration: lecture.duration,
+        hasTranscript: !!transcript,
+      }
+    );
 
     return () => {
       registerLectureHandlers(null);
