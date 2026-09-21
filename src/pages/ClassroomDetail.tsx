@@ -35,7 +35,6 @@ import {
   GraduationCap,
   Play,
   RotateCcw,
-  Volume2,
   Layers,
   HelpCircle,
   Copy,

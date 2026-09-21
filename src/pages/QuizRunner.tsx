@@ -22,11 +22,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Volume2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useVoiceAssistant } from "@/contexts/VoiceAssistantContext";
-import { useAccessibility } from "@/contexts/AccessibilityContext";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateConceptStatus, calculatePerformanceTrend } from "@/services/conceptMasteryRules";
 import {
@@ -44,10 +41,11 @@ interface QuizDetail {
   topic: string;
   subject: string | null;
   difficulty: string;
-  status: "DRAFT" | "PUBLISHED" | "CLOSED";
-  duration_minutes: number;
-  max_attempts: number;
+  total_marks: number;
+  time_limit_minutes: number;
+  status: string;
   description: string | null;
+  allow_multiple_attempts: boolean;
 }
 
 export function getOptionText(opt: any): string {
@@ -60,9 +58,8 @@ export function getOptionText(opt: any): string {
 interface QuestionItem {
   id: string;
   question: string;
-  options: any[];
-  correct_option_index: number;
-  topic: string;
+  options: any[]; // JSON array of string or object
+  correct_option: number;
   concept: string;
   marks: number;
   explanation?: string | null;
@@ -72,8 +69,6 @@ export default function QuizRunner() {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { registerQuizHandlers, speak } = useVoiceAssistant();
-  const { preferences } = useAccessibility();
 
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState<QuizDetail | null>(null);
@@ -565,73 +560,7 @@ export default function QuizRunner() {
     }
   };
 
-  // Voice Assistant Read Current Question & Options
-  const readCurrentQuestion = useCallback(() => {
-    if (!questions[currentIndex]) return;
-    const q = questions[currentIndex];
-    let speech = `Question ${currentIndex + 1}: ${q.question}. `;
-    const rawOpts = Array.isArray(q.options) ? q.options : [];
-    rawOpts.forEach((opt, idx) => {
-      const letter = ["A", "B", "C", "D"][idx] || String(idx + 1);
-      speech += `Option ${letter}: ${getOptionText(opt)}. `;
-    });
-    speak(speech);
-  }, [questions, currentIndex, speak]);
 
-  // Register active quiz voice actions
-  useEffect(() => {
-    if (questions.length === 0 || attemptResult) {
-      registerQuizHandlers(null);
-      return;
-    }
-
-    const currentQ = questions[currentIndex];
-    registerQuizHandlers(
-      {
-        readQuestion: readCurrentQuestion,
-        selectOption: (optIndex: number) => {
-          if (currentQ) {
-            handleSelectOption(currentQ.id, optIndex);
-          }
-        },
-        nextQuestion: () => {
-          if (currentIndex < questions.length - 1) {
-            setCurrentIndex((prev) => prev + 1);
-          }
-        },
-        prevQuestion: () => {
-          if (currentIndex > 0) {
-            setCurrentIndex((prev) => prev - 1);
-          }
-        },
-        submitQuiz: () => {
-          handleSubmitQuiz();
-        },
-      },
-      {
-        title: quiz?.title,
-        subject: quiz?.subject,
-        topic: quiz?.topic,
-        currentQuestionIndex: currentIndex,
-        totalQuestions: questions.length,
-        currentQuestionText: currentQ?.question,
-        options: (currentQ?.options || []).map((o: any) => getOptionText(o)),
-        hasAnswered: currentQ ? selectedAnswers[currentQ.id] !== undefined : false,
-      }
-    );
-
-    return () => {
-      registerQuizHandlers(null);
-    };
-  }, [
-    quiz,
-    questions,
-    currentIndex,
-    attemptResult,
-    readCurrentQuestion,
-    registerQuizHandlers,
-    selectedAnswers,
-  ]);
 
   if (loading) {
     return (
@@ -1018,16 +947,6 @@ export default function QuizRunner() {
                 {currentIndex + 1}. {currentQ.question}
               </span>
               <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={readCurrentQuestion}
-                  title="Read question and options aloud"
-                  aria-label="Read question and options aloud"
-                >
-                  <Volume2 className="h-4 w-4" />
-                </Button>
                 <Badge variant="outline" className="text-[10px] shrink-0">
                   {currentQ.marks || 1} mark{currentQ.marks > 1 ? "s" : ""}
                 </Badge>

@@ -12,15 +12,11 @@ import {
   BarChart3,
   Lightbulb,
   Settings,
-  LogOut,
-  Moon,
-  Sun,
   Menu,
   ChevronRight,
   ShieldCheck,
   RotateCcw,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -36,8 +32,7 @@ interface FacultyLayoutProps {
 
 const facultyNavItems = [
   { to: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/faculty/classrooms", label: "My Classrooms", icon: BookOpen, badge: "2 Active" },
-  { to: "/faculty/students", label: "Students", icon: Users, badge: "7 Support" },
+  { to: "/faculty/classrooms", label: "My Classrooms", icon: BookOpen },
   { to: "/faculty/assignments", label: "Assignments", icon: ClipboardList },
   { to: "/faculty/quizzes", label: "Quizzes", icon: FileCheck2 },
   { to: "/faculty/lectures", label: "Lectures", icon: Video },
@@ -50,26 +45,22 @@ const facultyNavItems = [
 const facultyMobileNavItems = [
   { to: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/faculty/classrooms", label: "Classes", icon: BookOpen },
-  { to: "/faculty/students", label: "Students", icon: Users },
   { to: "/faculty/assignments", label: "Assignments", icon: ClipboardList },
+  { to: "/faculty/attendance", label: "Attendance", icon: CalendarCheck },
   { to: "/faculty/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 export function FacultyLayout({ children }: FacultyLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
-  const { profile, signOut, enterDemoMode } = useAuth();
+  const { profile } = useAuth();
   const synapse = useSynapse();
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isActiveRoute = (path: string) => {
     if (path === "/faculty/classrooms") {
-      return location.pathname.startsWith("/faculty/classrooms");
-    }
-    if (path === "/faculty/students") {
-      return location.pathname.startsWith("/faculty/students");
+      return location.pathname.startsWith("/faculty/classrooms") || location.pathname.startsWith("/faculty/teaching");
     }
     if (path === "/faculty/assignments") {
       return location.pathname.startsWith("/faculty/assignments");
@@ -150,45 +141,26 @@ export function FacultyLayout({ children }: FacultyLayoutProps) {
           })}
         </nav>
 
-        {/* Faculty Footer & Switcher */}
-        <div className="p-3 border-t bg-card/40 space-y-2">
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-muted/40">
+        {/* Faculty Footer Profile Section */}
+        <div className="p-3 border-t bg-card/40">
+          <Link
+            to="/faculty/profile"
+            className="flex items-center gap-3 p-2 rounded-xl hover:bg-muted/60 transition-colors group"
+          >
             <Avatar className="h-9 w-9 border border-indigo-500/30">
               <AvatarImage src={profile?.avatar_url || ""} />
               <AvatarFallback className="bg-indigo-600/10 text-indigo-600 font-semibold text-xs">AT</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold truncate">{profile?.name || "Dr. Aris Thorne"}</div>
+              <div className="text-xs font-semibold truncate group-hover:text-indigo-600 transition-colors">
+                {profile?.name || "Dr. Aris Thorne"}
+              </div>
               <div className="text-[10px] text-muted-foreground truncate">
                 Associate Professor • CSE
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-1 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            >
-              {theme === "dark" ? <Sun className="h-3.5 w-3.5 mr-1" /> : <Moon className="h-3.5 w-3.5 mr-1" />}
-              {theme === "dark" ? "Light" : "Dark"}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => {
-                signOut();
-                navigate("/auth");
-              }}
-            >
-              <LogOut className="h-3.5 w-3.5 mr-1" />
-              Sign Out
-            </Button>
-          </div>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </Link>
         </div>
       </aside>
 

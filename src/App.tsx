@@ -28,12 +28,12 @@ const AdminClassroomDetailPage = lazy(() => import("./pages/admin/AdminClassroom
 const AdminTeachingAssignmentsPage = lazy(() => import("./pages/admin/AdminTeachingAssignmentsPage"));
 const AdminOpportunitiesPage = lazy(() => import("./pages/admin/AdminOpportunitiesPage"));
 const AdminLecturesPage = lazy(() => import("./pages/admin/AdminLecturesPage"));
+const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
 
 // Student Pages
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const MyLearning = lazy(() => import("./pages/MyLearning"));
 const TasksPage = lazy(() => import("./pages/TasksPage"));
-const ClassroomsPage = lazy(() => import("./pages/ClassroomsPage"));
 const ClassroomDetail = lazy(() => import("./pages/ClassroomDetail"));
 const CoursesPage = lazy(() => import("./pages/CoursesPage"));
 const Assignments = lazy(() => import("./pages/Assignments"));
@@ -81,9 +81,6 @@ function RoleRedirect({ studentPath, facultyPath }: { studentPath: string; facul
   return <Navigate to={role === "faculty" ? facultyPath : studentPath} replace />;
 }
 
-import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
-import { VoiceAssistantProvider } from "@/contexts/VoiceAssistantContext";
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -92,11 +89,9 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-            <AccessibilityProvider>
-              <VoiceAssistantProvider>
-                <ErrorBoundary>
-                  <Suspense fallback={<PageLoader />}>
-                    <Routes>
+            <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
                 {/* Public Entry Points */}
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Auth />} />
@@ -131,22 +126,6 @@ const App = () => (
                   element={
                     <StudentRoute>
                       <Dashboard />
-                    </StudentRoute>
-                  }
-                />
-                <Route
-                  path="/student/classrooms"
-                  element={
-                    <StudentRoute>
-                      <ClassroomsPage />
-                    </StudentRoute>
-                  }
-                />
-                <Route
-                  path="/student/classrooms/:classroomId"
-                  element={
-                    <StudentRoute>
-                      <ClassroomDetail />
                     </StudentRoute>
                   }
                 />
@@ -454,7 +433,7 @@ const App = () => (
                   path="/admin/settings"
                   element={
                     <AdminRoute>
-                      <AdminDashboard />
+                      <AdminSettingsPage />
                     </AdminRoute>
                   }
                 />
@@ -484,15 +463,15 @@ const App = () => (
                 />
                 <Route
                   path="/classrooms"
-                  element={<RoleRedirect studentPath="/student/classrooms" facultyPath="/faculty/classrooms" />}
+                  element={<RoleRedirect studentPath="/student/learning" facultyPath="/faculty/classrooms" />}
                 />
                 <Route
                   path="/classrooms/:classroomId"
-                  element={<RoleRedirect studentPath="/student/classrooms" facultyPath="/faculty/classrooms" />}
+                  element={<RoleRedirect studentPath="/student/learning" facultyPath="/faculty/classrooms" />}
                 />
                 <Route
                   path="/courses"
-                  element={<RoleRedirect studentPath="/student/classrooms" facultyPath="/faculty/classrooms" />}
+                  element={<RoleRedirect studentPath="/student/learning" facultyPath="/faculty/classrooms" />}
                 />
                 <Route
                   path="/assignments"
@@ -580,8 +559,6 @@ const App = () => (
               </Routes>
             </Suspense>
           </ErrorBoundary>
-              </VoiceAssistantProvider>
-            </AccessibilityProvider>
         </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

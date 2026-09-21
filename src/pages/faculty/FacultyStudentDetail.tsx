@@ -292,8 +292,8 @@ export default function FacultyStudentDetail() {
           <HelpCircle className="mx-auto h-12 w-12 text-muted-foreground" />
           <h2 className="text-xl font-bold">Student Record Not Found</h2>
           <p className="text-xs text-muted-foreground">The requested student profile could not be located.</p>
-          <Button onClick={() => navigate("/faculty/students")} variant="outline" size="sm">
-            Back to Directory
+          <Button onClick={() => navigate("/faculty/classrooms")} variant="outline" size="sm">
+            Back to My Classrooms
           </Button>
         </div>
       </FacultyLayout>
@@ -312,11 +312,11 @@ export default function FacultyStudentDetail() {
         {/* Navigation & Student Header */}
         <div className="space-y-4">
           <Link
-            to="/faculty/students"
+            to="/faculty/classrooms"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Student Directory
+            Back to My Classrooms
           </Link>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl border bg-card shadow-card">

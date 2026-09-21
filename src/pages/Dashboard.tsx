@@ -308,9 +308,9 @@ export default function Dashboard() {
                       <Button
                         size="sm"
                         className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
-                        onClick={() => navigate("/student/classrooms")}
+                        onClick={() => navigate("/student/learning")}
                       >
-                        <span>View Classroom Hub</span>
+                        <span>View My Learning</span>
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -354,9 +354,9 @@ export default function Dashboard() {
                       <Button
                         size="sm"
                         className="gap-2 bg-amber-500 hover:bg-amber-600 text-amber-950 font-semibold"
-                        onClick={() => navigate("/student/classrooms")}
+                        onClick={() => navigate("/student/learning")}
                       >
-                        <span>View Class Session</span>
+                        <span>Review in My Learning</span>
                       </Button>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { FacultyLayout } from "@/components/layout/FacultyLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,14 +28,11 @@ import {
   Users,
   CheckCircle2,
   XCircle,
-  Plus,
-  X,
   History,
-  Clock,
   BookOpen,
   Loader2,
-  FileText,
   School,
+  RotateCcw,
   Check,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -68,12 +65,19 @@ interface ClassSessionItem {
   date: string;
   topic: string;
   teaching_notes: string | null;
-  concepts: string[];
   present_count: number;
   absent_count: number;
   total_students: number;
   present_students: string[];
   absent_students: string[];
+}
+
+function getTodayString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function FacultyAttendancePage() {
@@ -84,36 +88,19 @@ export default function FacultyAttendancePage() {
   const [selectedCohortId, setSelectedCohortId] = useState("");
 
   // Daily attendance state
-  const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [sessionDate, setSessionDate] = useState(getTodayString);
   const [sessionTopic, setSessionTopic] = useState("");
-  const [conceptsTaught, setConceptsTaught] = useState<string[]>([]);
-  const [newConceptInput, setNewConceptInput] = useState("");
   const [teachingNotes, setTeachingNotes] = useState("");
   const [students, setStudents] = useState<EnrolledStudent[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [savingSession, setSavingSession] = useState(false);
+  const [existingSessionId, setExistingSessionId] = useState<string | null>(null);
 
   // History state
   const [historySessions, setHistorySessions] = useState<ClassSessionItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedSessionDetail, setSelectedSessionDetail] = useState<ClassSessionItem | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-
-  // Common quick-pick concepts based on topic
-  const SUGGESTED_CONCEPTS = [
-    "Functional Dependencies",
-    "Candidate Keys",
-    "First Normal Form (1NF)",
-    "Second Normal Form (2NF)",
-    "Third Normal Form (3NF)",
-    "BCNF Decomposition",
-    "Lossless Join Property",
-    "Dependency Preservation",
-    "SQL Subqueries & Aggregations",
-    "ACID Properties & Transactions",
-    "Two-Phase Locking (2PL)",
-    "B+ Tree Indexing",
-  ];
 
   // 1. Fetch faculty's authorized teaching assignments
   const fetchCohorts = async () => {
@@ -156,17 +143,21 @@ export default function FacultyAttendancePage() {
     fetchCohorts();
   }, [user]);
 
-  // 2. Load students for selected teaching assignment's classroom
-  const fetchStudentsForCohort = async (cohortId: string) => {
+  // 2. Load student roster & auto-load existing attendance if previously saved for this cohort + date
+  const loadRosterAndAttendance = async (cohortId: string, dateStr: string) => {
     const cohort = teachingCohorts.find((c) => c.id === cohortId);
     if (!cohort || !cohort.classroom_id) {
       setStudents([]);
+      setExistingSessionId(null);
+      setSessionTopic("");
+      setTeachingNotes("");
       return;
     }
 
     setLoadingStudents(true);
     try {
-      const { data: members, error } = await supabase
+      // A. Fetch roster members
+      const { data: members, error: membersErr } = await supabase
         .from("classroom_members")
         .select(`
           student:profiles!classroom_members_student_id_fkey (
@@ -177,19 +168,66 @@ export default function FacultyAttendancePage() {
         `)
         .eq("classroom_id", cohort.classroom_id);
 
-      if (error) throw error;
+      if (membersErr) throw membersErr;
 
-      const mapped: EnrolledStudent[] = (members || [])
+      const roster: { id: string; name: string; roll_number: string }[] = (members || [])
         .filter((m: any) => m.student)
         .map((m: any) => ({
           id: m.student.id,
           name: m.student.name || "Student",
           roll_number: m.student.roll_number || "—",
-          status: "present", // Default all present as required
         }))
-        .sort((a, b) => a.roll_number.localeCompare(b.roll_number));
+        .sort((a, b) => a.roll_number.localeCompare(b.roll_number, undefined, { numeric: true }));
 
-      setStudents(mapped);
+      // B. Check if attendance was already recorded for this cohort & date
+      const { data: existingSession, error: sessErr } = await supabase
+        .from("class_sessions")
+        .select(`
+          id,
+          topic,
+          teaching_notes,
+          attendance_records (
+            student_id,
+            status
+          )
+        `)
+        .eq("teaching_assignment_id", cohortId)
+        .eq("date", dateStr)
+        .maybeSingle();
+
+      if (sessErr) {
+        console.error("Error checking existing session:", sessErr);
+      }
+
+      if (existingSession) {
+        // Load saved state
+        setExistingSessionId(existingSession.id);
+        setSessionTopic(existingSession.topic || "");
+        setTeachingNotes(existingSession.teaching_notes || "");
+
+        const statusMap = new Map<string, "present" | "absent">();
+        (existingSession.attendance_records || []).forEach((rec: any) => {
+          statusMap.set(rec.student_id, rec.status === "absent" ? "absent" : "present");
+        });
+
+        setStudents(
+          roster.map((st) => ({
+            ...st,
+            status: statusMap.get(st.id) || "present",
+          }))
+        );
+      } else {
+        // Brand new session: all students default to PRESENT
+        setExistingSessionId(null);
+        setSessionTopic("");
+        setTeachingNotes("");
+        setStudents(
+          roster.map((st) => ({
+            ...st,
+            status: "present",
+          }))
+        );
+      }
     } catch (err: any) {
       console.error("Failed to fetch students for attendance:", err);
       toast.error("Failed to load classroom roster");
@@ -204,7 +242,6 @@ export default function FacultyAttendancePage() {
     setLoadingHistory(true);
 
     try {
-      // Fetch sessions for this teaching assignment
       const { data: sessData, error: sessErr } = await supabase
         .from("class_sessions")
         .select(`
@@ -212,7 +249,6 @@ export default function FacultyAttendancePage() {
           date,
           topic,
           teaching_notes,
-          session_concepts (concept_name),
           attendance_records (
             status,
             student:profiles (name, roll_number)
@@ -237,7 +273,6 @@ export default function FacultyAttendancePage() {
           date: s.date,
           topic: s.topic,
           teaching_notes: s.teaching_notes,
-          concepts: (s.session_concepts || []).map((c: any) => c.concept_name),
           present_count: presents.length,
           absent_count: absents.length,
           total_students: records.length,
@@ -256,13 +291,13 @@ export default function FacultyAttendancePage() {
 
   useEffect(() => {
     if (selectedCohortId) {
-      fetchStudentsForCohort(selectedCohortId);
+      loadRosterAndAttendance(selectedCohortId, sessionDate);
       fetchAttendanceHistory(selectedCohortId);
     }
-  }, [selectedCohortId, teachingCohorts]);
+  }, [selectedCohortId, sessionDate, teachingCohorts]);
 
-  // Handler: Toggle single student status
-  const handleToggleStatus = (studentId: string) => {
+  // Handler: Toggle single student status (PRESENT <-> ABSENT)
+  const handleToggleStudent = (studentId: string) => {
     setStudents((prev) =>
       prev.map((st) =>
         st.id === studentId
@@ -275,29 +310,13 @@ export default function FacultyAttendancePage() {
   // Handler: Mark all present
   const handleMarkAllPresent = () => {
     setStudents((prev) => prev.map((st) => ({ ...st, status: "present" })));
-    toast.success("Marked all students as Present.");
+    toast.success("All students marked as Present.");
   };
 
-  // Handler: Add concept tag
-  const handleAddConcept = (concept: string) => {
-    const trimmed = concept.trim();
-    if (!trimmed) return;
-    if (conceptsTaught.includes(trimmed)) {
-      toast.info("Concept already selected.");
-      return;
-    }
-    setConceptsTaught([...conceptsTaught, trimmed]);
-    setNewConceptInput("");
-  };
-
-  const handleRemoveConcept = (concept: string) => {
-    setConceptsTaught(conceptsTaught.filter((c) => c !== concept));
-  };
-
-  // Handler: Save Session & Attendance
-  const handleSaveSessionAttendance = async () => {
+  // Handler: Save / Update Session Attendance
+  const handleSaveAttendance = async () => {
     if (!sessionTopic.trim()) {
-      toast.error("Please enter the Topic taught during this session.");
+      toast.error("Please enter the topic covered today.");
       return;
     }
     if (students.length === 0) {
@@ -307,37 +326,55 @@ export default function FacultyAttendancePage() {
 
     setSavingSession(true);
     try {
-      // 1. Insert class_session
-      const { data: sessionData, error: sessionErr } = await supabase
-        .from("class_sessions")
-        .insert({
-          teaching_assignment_id: selectedCohortId,
-          date: sessionDate,
-          topic: sessionTopic.trim(),
-          teaching_notes: teachingNotes.trim() || null,
-          created_by: user?.id,
-        })
-        .select()
-        .single();
+      let sessionId = existingSessionId;
 
-      if (sessionErr) throw sessionErr;
+      if (sessionId) {
+        // Update existing class_session
+        const { error: sessionErr } = await supabase
+          .from("class_sessions")
+          .update({
+            topic: sessionTopic.trim(),
+            teaching_notes: teachingNotes.trim() || null,
+          })
+          .eq("id", sessionId);
 
-      const sessionId = sessionData.id;
+        if (sessionErr) throw sessionErr;
 
-      // 2. Insert session_concepts
-      if (conceptsTaught.length > 0) {
-        const conceptsToInsert = conceptsTaught.map((c) => ({
-          session_id: sessionId,
-          concept_name: c,
-        }));
-        const { error: conceptErr } = await supabase
-          .from("session_concepts")
-          .insert(conceptsToInsert);
+        // Clean up previous records to prevent duplicates
+        const { error: delErr } = await supabase
+          .from("attendance_records")
+          .delete()
+          .eq("session_id", sessionId);
 
-        if (conceptErr) throw conceptErr;
+        if (delErr) throw delErr;
+      } else {
+        // Insert new class_session
+        const { data: sessionData, error: sessionErr } = await supabase
+          .from("class_sessions")
+          .insert({
+            teaching_assignment_id: selectedCohortId,
+            date: sessionDate,
+            topic: sessionTopic.trim(),
+            teaching_notes: teachingNotes.trim() || null,
+            created_by: user?.id,
+          })
+          .select()
+          .single();
+
+        if (sessionErr) throw sessionErr;
+        sessionId = sessionData.id;
+        setExistingSessionId(sessionId);
       }
 
-      // 3. Insert attendance_records
+      // Sync topic into session_concepts for analytics and recommendations
+      if (sessionTopic.trim()) {
+        await supabase.from("session_concepts").delete().eq("session_id", sessionId);
+        await supabase
+          .from("session_concepts")
+          .insert([{ session_id: sessionId, concept_name: sessionTopic.trim() }]);
+      }
+
+      // Insert fresh attendance_records
       const recordsToInsert = students.map((st) => ({
         session_id: sessionId,
         student_id: st.id,
@@ -351,421 +388,331 @@ export default function FacultyAttendancePage() {
       if (attErr) throw attErr;
 
       const presentCount = students.filter((s) => s.status === "present").length;
+      const absentCount = students.filter((s) => s.status === "absent").length;
+
       toast.success(
-        `Session & Attendance saved! (${presentCount}/${students.length} Present for ${sessionTopic.trim()})`
+        existingSessionId
+          ? `Attendance updated successfully (${presentCount} Present, ${absentCount} Absent)`
+          : `Attendance posted successfully (${presentCount} Present, ${absentCount} Absent)`
       );
 
-      // Reset form
-      setSessionTopic("");
-      setConceptsTaught([]);
-      setTeachingNotes("");
+      // Refresh history records
       fetchAttendanceHistory(selectedCohortId);
-      // Reset student list to present
-      handleMarkAllPresent();
     } catch (err: any) {
-      console.error("Error saving session attendance:", err);
-      toast.error("Failed to record attendance: " + err.message);
+      console.error("Error saving attendance:", err);
+      toast.error("Failed to save attendance: " + (err.message || "Unknown error"));
     } finally {
       setSavingSession(false);
     }
   };
 
   const selectedCohort = teachingCohorts.find((c) => c.id === selectedCohortId);
+  const presentCount = students.filter((s) => s.status === "present").length;
+  const absentCount = students.filter((s) => s.status === "absent").length;
 
   return (
     <FacultyLayout>
-      <div className="container max-w-7xl mx-auto px-4 py-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
+      <div className="container max-w-5xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+        {/* HEADER & COHORT/DATE CONTROLS */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-border/80">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-xs">
-                Classroom Attendance & Curriculum Recording
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Authorized Teaching View</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-1">
-              Class Attendance
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              Attendance
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Record daily attendance, capture topics and concepts taught, and review historical session logs.
-            </p>
+            {selectedCohort && (
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-medium">
+                {selectedCohort.subject_name} · {selectedCohort.classroom?.name}
+              </p>
+            )}
           </div>
 
-          {/* Teaching Assignment Cohort Selector */}
-          <div className="w-full sm:w-80">
-            <Label htmlFor="cohort-select" className="text-xs font-semibold text-muted-foreground block mb-1">
-              Teaching Assignment (Subject · Cohort)
-            </Label>
-            <select
-              id="cohort-select"
-              value={selectedCohortId}
-              onChange={(e) => setSelectedCohortId(e.target.value)}
-              disabled={loadingCohorts || teachingCohorts.length === 0}
-              className="w-full h-10 rounded-md border bg-background px-3 text-xs font-semibold"
-            >
-              {teachingCohorts.length === 0 ? (
-                <option value="">No teaching assignments allocated</option>
-              ) : (
-                teachingCohorts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.subject_name} ({c.subject_code || "SUB"}) · {c.classroom?.name}
-                  </option>
-                ))
-              )}
-            </select>
+          {/* Quick Selectors: Class / Cohort & Date */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="w-full sm:w-64">
+              <Label htmlFor="cohort-select" className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                Class / Cohort
+              </Label>
+              <select
+                id="cohort-select"
+                value={selectedCohortId}
+                onChange={(e) => setSelectedCohortId(e.target.value)}
+                disabled={loadingCohorts || teachingCohorts.length === 0}
+                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {teachingCohorts.length === 0 ? (
+                  <option value="">No classes assigned</option>
+                ) : (
+                  teachingCohorts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.subject_name} · {c.classroom?.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="w-full sm:w-40">
+              <Label htmlFor="session-date" className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                Date
+              </Label>
+              <Input
+                id="session-date"
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className="h-9 text-xs font-semibold text-foreground bg-background"
+              />
+            </div>
           </div>
         </div>
 
+        {/* MAIN BODY */}
         {loadingCohorts ? (
-          <div className="flex items-center justify-center p-20 bg-muted/20 rounded-2xl border border-dashed">
-            <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <div className="flex items-center justify-center p-16 bg-muted/20 rounded-2xl border border-dashed">
+            <Loader2 className="h-7 w-7 animate-spin text-indigo-600" />
           </div>
         ) : teachingCohorts.length === 0 ? (
           <Card className="border-dashed border-2 bg-muted/20">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center space-y-4">
-              <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600">
-                <School className="h-7 w-7" />
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+              <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600">
+                <School className="h-6 w-6" />
               </div>
-              <div className="max-w-md space-y-1">
-                <h3 className="text-base font-bold text-foreground">No Teaching Cohorts Assigned</h3>
-                <p className="text-sm text-muted-foreground">
-                  You are not assigned to any subjects or classroom cohorts yet. Please contact your institutional administrator.
-                </p>
-              </div>
+              <h3 className="text-base font-bold text-foreground">No Teaching Cohorts Assigned</h3>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                You are not currently assigned to any classroom cohorts. Please contact your institutional administrator.
+              </p>
             </CardContent>
           </Card>
         ) : (
           <Tabs defaultValue="daily" className="space-y-6">
-            <TabsList className="bg-muted/60 p-1">
-              <TabsTrigger value="daily" className="text-xs gap-1.5">
+            <TabsList className="bg-muted/50 p-1">
+              <TabsTrigger value="daily" className="text-xs gap-1.5 font-semibold">
                 <CalendarCheck className="h-3.5 w-3.5" />
-                <span>Daily Attendance</span>
+                <span>Take Attendance</span>
               </TabsTrigger>
-              <TabsTrigger value="history" className="text-xs gap-1.5">
+              <TabsTrigger value="history" className="text-xs gap-1.5 font-semibold">
                 <History className="h-3.5 w-3.5" />
-                <span>Attendance History ({historySessions.length})</span>
+                <span>Session History ({historySessions.length})</span>
               </TabsTrigger>
             </TabsList>
 
-            {/* TAB: DAILY ATTENDANCE */}
+            {/* TAB 1: FAST 30-SECOND ATTENDANCE WORKFLOW */}
             <TabsContent value="daily" className="space-y-6">
-              {/* Session Meta & What Was Taught Card */}
-              <Card className="shadow-card border-slate-200 dark:border-slate-800">
-                <CardHeader className="pb-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-base font-bold text-foreground flex items-center gap-2">
-                        <BookOpen className="h-4 w-4 text-indigo-600" />
-                        <span>What Was Taught In This Session</span>
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Capturing topic and specific concepts enables diagnostic gap tracking and recovery modules.
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="sess-date" className="text-xs font-semibold text-muted-foreground">Date:</Label>
-                      <Input
-                        id="sess-date"
-                        type="date"
-                        value={sessionDate}
-                        onChange={(e) => setSessionDate(e.target.value)}
-                        className="h-8 text-xs w-36"
-                      />
-                    </div>
+              {/* ATTENDANCE SUMMARY BAR */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/70 text-xs">
+                <div className="flex items-center gap-4 sm:gap-6">
+                  <div>
+                    <span className="text-muted-foreground font-medium">Total:</span>{" "}
+                    <span className="font-bold text-foreground text-sm">{students.length}</span>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sess-topic" className="text-xs font-semibold">
-                        Topic Covered *
-                      </Label>
-                      <Input
-                        id="sess-topic"
-                        value={sessionTopic}
-                        onChange={(e) => setSessionTopic(e.target.value)}
-                        placeholder="e.g. Normalization & Decomposition"
-                        className="text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">Add Concept Tag</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={newConceptInput}
-                          onChange={(e) => setNewConceptInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleAddConcept(newConceptInput);
-                            }
-                          }}
-                          placeholder="e.g. 2NF Partial Dependencies"
-                          className="text-xs"
-                        />
-                        <Button
-                          type="button"
-                          onClick={() => handleAddConcept(newConceptInput)}
-                          size="sm"
-                          variant="outline"
-                          className="text-xs shrink-0"
-                        >
-                          <Plus className="h-3.5 w-3.5 mr-1" />
-                          Add
-                        </Button>
-                      </div>
-                    </div>
+                  <div className="h-4 w-px bg-border" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <span className="text-muted-foreground font-medium">Present:</span>{" "}
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                      {presentCount}
+                    </span>
                   </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                    <span className="text-muted-foreground font-medium">Absent:</span>{" "}
+                    <span className="font-bold text-rose-600 dark:text-rose-400 text-sm">
+                      {absentCount}
+                    </span>
+                  </div>
+                </div>
 
-                  {/* Selected Concepts Tags */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground">
-                      Concepts Taught ({conceptsTaught.length}):
-                    </Label>
-                    <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 rounded-xl bg-muted/30 border border-dashed">
-                      {conceptsTaught.length === 0 ? (
-                        <span className="text-xs text-muted-foreground italic">
-                          No concepts added yet. Select from suggestions below or type a custom concept tag above.
-                        </span>
-                      ) : (
-                        conceptsTaught.map((c) => (
-                          <Badge
-                            key={c}
-                            className="bg-indigo-600 text-white text-xs gap-1 pr-1.5 py-1"
-                          >
-                            <span>{c}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveConcept(c)}
-                              className="hover:bg-indigo-700 rounded-full p-0.5"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))
-                      )}
-                    </div>
+                <div className="flex items-center gap-2">
+                  {absentCount > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleMarkAllPresent}
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2.5"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Mark all present</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
 
-                    {/* Quick suggestion chips */}
-                    <div className="pt-1">
-                      <span className="text-[11px] text-muted-foreground font-semibold mr-1.5">Quick Suggestions:</span>
-                      <div className="inline-flex flex-wrap gap-1 mt-1">
-                        {SUGGESTED_CONCEPTS.slice(0, 6).map((sc) => (
+              {/* STUDENT ROLL NUMBERS GRID */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Student Roll Numbers
+                  </h2>
+                  <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                    Tap absent students
+                  </span>
+                </div>
+
+                {loadingStudents ? (
+                  <div className="flex items-center justify-center p-12 bg-muted/10 rounded-2xl border border-dashed">
+                    <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+                  </div>
+                ) : students.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground border rounded-2xl bg-muted/10">
+                    <Users className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
+                    <p className="text-sm font-semibold text-foreground">No students enrolled in this classroom</p>
+                    <p className="text-xs mt-1 text-muted-foreground">
+                      Students assigned to this classroom cohort will appear here automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                      {students.map((student) => {
+                        const isAbsent = student.status === "absent";
+                        return (
                           <button
-                            key={sc}
+                            key={student.id}
                             type="button"
-                            onClick={() => handleAddConcept(sc)}
-                            className="text-[10px] px-2 py-0.5 rounded-md border bg-card hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-muted-foreground hover:text-indigo-600 transition"
+                            onClick={() => handleToggleStudent(student.id)}
+                            className={`group relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl border text-center transition-all select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                              isAbsent
+                                ? "bg-rose-500/10 border-rose-500/50 text-rose-600 dark:text-rose-400 font-bold ring-1 ring-rose-500/30 shadow-xs"
+                                : "bg-card hover:bg-muted/40 border-border text-foreground font-medium hover:border-primary/40 shadow-xs"
+                            }`}
+                            aria-label={`Roll ${student.roll_number}, currently ${student.status}`}
+                            title={`${student.name} (${student.roll_number}) • Click to toggle`}
                           >
-                            + {sc}
+                            <span className="font-mono text-xs sm:text-sm tracking-wide font-semibold">
+                              {student.roll_number}
+                            </span>
+                            {isAbsent && (
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                                Absent
+                              </span>
+                            )}
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                    <p className="text-xs text-muted-foreground text-center sm:text-left pt-1">
+                      Click a roll number to mark the student absent. All students are marked present by default.
+                    </p>
+                  </>
+                )}
+              </div>
 
-                  {/* Teaching Notes */}
+              {/* TODAY'S LESSON */}
+              <div className="pt-4 border-t border-border/80 space-y-4">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
+                    Today's Lesson
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="sess-notes" className="text-xs font-semibold">
-                      Teaching Notes (Optional)
+                    <Label htmlFor="session-topic" className="text-xs font-semibold text-foreground">
+                      Topic Covered <span className="text-rose-500">*</span>
                     </Label>
-                    <Textarea
-                      id="sess-notes"
-                      value={teachingNotes}
-                      onChange={(e) => setTeachingNotes(e.target.value)}
-                      placeholder="e.g. Covered Boyce-Codd Normal Form proof. Several students struggled on composite key decomposition."
-                      rows={2}
-                      className="text-xs"
+                    <Input
+                      id="session-topic"
+                      value={sessionTopic}
+                      onChange={(e) => setSessionTopic(e.target.value)}
+                      placeholder="e.g. Normalization & Decomposition"
+                      className="text-xs sm:text-sm h-10 bg-background"
                     />
                   </div>
-                </CardContent>
-              </Card>
 
-              {/* Student Attendance Roster Card */}
-              <Card className="shadow-card border-slate-200 dark:border-slate-800">
-                <CardHeader className="pb-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-base font-bold text-foreground flex items-center gap-2">
-                        <Users className="h-4 w-4 text-indigo-600" />
-                        <span>Student Attendance: {selectedCohort?.subject_name} · {selectedCohort?.classroom?.name}</span>
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Default status is Present. Toggle absentees with a single click.
-                      </CardDescription>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        onClick={handleMarkAllPresent}
-                        size="sm"
-                        variant="outline"
-                        className="text-xs gap-1 border-indigo-500/30"
-                      >
-                        <Check className="h-3.5 w-3.5 text-indigo-600" />
-                        <span>Mark All Present</span>
-                      </Button>
-                    </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="session-notes" className="text-xs font-semibold text-muted-foreground">
+                      Teaching Notes <span className="text-xs font-normal">(optional)</span>
+                    </Label>
+                    <Textarea
+                      id="session-notes"
+                      value={teachingNotes}
+                      onChange={(e) => setTeachingNotes(e.target.value)}
+                      placeholder="e.g. Covered 2NF and 3NF. Students had difficulty understanding partial dependencies."
+                      rows={2}
+                      className="text-xs bg-background resize-none"
+                    />
                   </div>
-                </CardHeader>
+                </div>
+              </div>
 
-                <CardContent className="space-y-4">
-                  {loadingStudents ? (
-                    <div className="flex items-center justify-center p-12">
-                      <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
-                    </div>
-                  ) : students.length === 0 ? (
-                    <div className="text-center py-10 text-muted-foreground border rounded-xl bg-muted/20">
-                      <Users className="mx-auto h-8 w-8 text-muted-foreground/60 mb-2" />
-                      <p className="text-sm font-semibold text-foreground">No students in this classroom yet</p>
-                      <p className="text-xs mt-1">
-                        Students added by administrator will automatically appear here.
-                      </p>
-                    </div>
+              {/* POST / SAVE ATTENDANCE ACTION */}
+              <div className="pt-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border/80">
+                <div className="text-xs text-muted-foreground">
+                  {existingSessionId ? (
+                    <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      Editing saved attendance record for {sessionDate}
+                    </span>
                   ) : (
-                    <div className="space-y-4">
-                      {/* Summary indicator */}
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border text-xs">
-                        <div>
-                          <span className="text-muted-foreground">Total:</span>{" "}
-                          <strong className="text-foreground">{students.length} students</strong>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <span className="text-emerald-600 font-bold">
-                            ● {students.filter((s) => s.status === "present").length} Present
-                          </span>
-                          <span className="text-rose-600 font-bold">
-                            ● {students.filter((s) => s.status === "absent").length} Absent
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="border rounded-2xl overflow-hidden bg-card">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/40">
-                              <TableHead className="w-14">#</TableHead>
-                              <TableHead>Roll Number</TableHead>
-                              <TableHead>Student Name</TableHead>
-                              <TableHead className="text-right">Attendance Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {students.map((student, idx) => {
-                              const isPresent = student.status === "present";
-                              return (
-                                <TableRow
-                                  key={student.id}
-                                  className="hover:bg-muted/20 cursor-pointer"
-                                  onClick={() => handleToggleStatus(student.id)}
-                                >
-                                  <TableCell className="text-xs font-mono text-muted-foreground">
-                                    {idx + 1}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant="outline" className="font-mono text-xs">
-                                      {student.roll_number}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-sm font-semibold text-foreground">
-                                    {student.name}
-                                  </TableCell>
-                                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => handleToggleStatus(student.id)}
-                                      className={`h-7 text-xs font-semibold gap-1.5 transition-all ${
-                                        isPresent
-                                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          : "bg-rose-600 hover:bg-rose-700 text-white"
-                                      }`}
-                                    >
-                                      {isPresent ? (
-                                        <>
-                                          <CheckCircle2 className="h-3.5 w-3.5" />
-                                          <span>Present</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <XCircle className="h-3.5 w-3.5" />
-                                          <span>Absent</span>
-                                        </>
-                                      )}
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-
-                      {/* Save Attendance Button */}
-                      <div className="pt-2 flex justify-end">
-                        <Button
-                          type="button"
-                          onClick={handleSaveSessionAttendance}
-                          disabled={savingSession || students.length === 0}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 text-xs h-10 gap-2 shadow-md shadow-indigo-600/20"
-                        >
-                          {savingSession ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span>Saving Session & Attendance...</span>
-                            </>
-                          ) : (
-                            <>
-                              <CalendarCheck className="h-4 w-4" />
-                              <span>Post Attendance & Session</span>
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Ready to post attendance for {sessionDate}
+                    </span>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleSaveAttendance}
+                  disabled={savingSession || students.length === 0}
+                  className="h-11 px-8 text-xs sm:text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-md shadow-indigo-600/20"
+                >
+                  {savingSession ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Saving Attendance...</span>
+                    </>
+                  ) : existingSessionId ? (
+                    <>
+                      <CalendarCheck className="h-4 w-4" />
+                      <span>Update Attendance</span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarCheck className="h-4 w-4" />
+                      <span>Post Attendance</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </TabsContent>
 
-            {/* TAB: ATTENDANCE HISTORY */}
+            {/* TAB 2: ATTENDANCE HISTORY */}
             <TabsContent value="history" className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Past Recorded Sessions</h3>
+                  <h3 className="text-sm font-bold text-foreground">Past Recorded Sessions</h3>
                   <p className="text-xs text-muted-foreground">
-                    Historical logs of sessions taught and student attendance records for this cohort.
+                    Historical logs of sessions and student turnout for this cohort.
                   </p>
                 </div>
               </div>
 
               {loadingHistory ? (
-                <div className="flex items-center justify-center p-12">
+                <div className="flex items-center justify-center p-12 bg-muted/10 rounded-2xl border border-dashed">
                   <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
                 </div>
               ) : historySessions.length === 0 ? (
                 <Card className="border-dashed p-10 text-center bg-muted/20">
                   <div className="flex flex-col items-center justify-center space-y-2">
-                    <History className="h-8 w-8 text-muted-foreground" />
+                    <History className="h-8 w-8 text-muted-foreground/60" />
                     <p className="text-sm font-semibold text-foreground">No sessions recorded yet</p>
                     <p className="text-xs text-muted-foreground">
-                      Use the Daily Attendance tab to post attendance and record what was taught.
+                      Use the Take Attendance tab to post attendance and record what was taught.
                     </p>
                   </div>
                 </Card>
               ) : (
-                <div className="border rounded-2xl overflow-hidden bg-card shadow-card">
+                <div className="border border-border/80 rounded-2xl overflow-hidden bg-card shadow-xs">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
-                        <TableHead>Date</TableHead>
-                        <TableHead>Topic Covered</TableHead>
-                        <TableHead>Concepts Taught</TableHead>
-                        <TableHead>Attendance Ratio</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="text-xs">Date</TableHead>
+                        <TableHead className="text-xs">Topic Covered</TableHead>
+                        <TableHead className="text-xs">Attendance Turnout</TableHead>
+                        <TableHead className="text-xs text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -778,33 +725,11 @@ export default function FacultyAttendancePage() {
                             setDetailModalOpen(true);
                           }}
                         >
-                          <TableCell className="text-xs font-semibold text-foreground">
-                            {new Date(sess.date).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
+                          <TableCell className="text-xs font-semibold text-foreground font-mono">
+                            {sess.date}
                           </TableCell>
                           <TableCell className="text-xs font-bold text-foreground">
                             {sess.topic}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1 max-w-md">
-                              {sess.concepts.length === 0 ? (
-                                <span className="text-[11px] text-muted-foreground">—</span>
-                              ) : (
-                                sess.concepts.slice(0, 3).map((c) => (
-                                  <Badge key={c} variant="outline" className="text-[10px]">
-                                    {c}
-                                  </Badge>
-                                ))
-                              )}
-                              {sess.concepts.length > 3 && (
-                                <Badge variant="secondary" className="text-[10px]">
-                                  +{sess.concepts.length - 3} more
-                                </Badge>
-                              )}
-                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -822,7 +747,7 @@ export default function FacultyAttendancePage() {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="text-xs text-indigo-600 hover:text-indigo-700 h-8"
+                              className="text-xs text-indigo-600 hover:text-indigo-700 h-8 font-semibold"
                               onClick={() => {
                                 setSelectedSessionDetail(sess);
                                 setDetailModalOpen(true);
@@ -843,11 +768,11 @@ export default function FacultyAttendancePage() {
 
         {/* MODAL: SESSION DETAIL BREAKDOWN */}
         <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
-          <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 text-base">
                 <CalendarCheck className="h-5 w-5 text-indigo-600" />
-                <span>Session Log: {selectedSessionDetail?.topic}</span>
+                <span>Session: {selectedSessionDetail?.topic}</span>
               </DialogTitle>
               <DialogDescription className="text-xs">
                 Date: {selectedSessionDetail?.date} • {selectedSessionDetail?.present_count}/{selectedSessionDetail?.total_students} Students Present
@@ -856,31 +781,13 @@ export default function FacultyAttendancePage() {
 
             {selectedSessionDetail && (
               <div className="space-y-4 py-2 text-xs">
-                {/* Concepts Taught */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase">
-                    Concepts Taught
-                  </Label>
-                  <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-muted/30 border">
-                    {selectedSessionDetail.concepts.length === 0 ? (
-                      <span className="text-muted-foreground">None specified</span>
-                    ) : (
-                      selectedSessionDetail.concepts.map((c) => (
-                        <Badge key={c} variant="secondary" className="text-xs">
-                          {c}
-                        </Badge>
-                      ))
-                    )}
-                  </div>
-                </div>
-
                 {/* Notes */}
                 {selectedSessionDetail.teaching_notes && (
                   <div className="space-y-1">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                    <Label className="text-[11px] font-semibold text-muted-foreground uppercase">
                       Teaching Notes
                     </Label>
-                    <p className="p-3 rounded-xl bg-muted/20 border text-foreground">
+                    <p className="p-3 rounded-xl bg-muted/30 border border-border/80 text-foreground">
                       {selectedSessionDetail.teaching_notes}
                     </p>
                   </div>
@@ -888,18 +795,18 @@ export default function FacultyAttendancePage() {
 
                 {/* Absentees List */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-rose-600 uppercase flex items-center gap-1">
+                  <Label className="text-[11px] font-semibold text-rose-600 uppercase flex items-center gap-1">
                     <XCircle className="h-3.5 w-3.5" />
                     <span>Absent Students ({selectedSessionDetail.absent_students.length})</span>
                   </Label>
                   {selectedSessionDetail.absent_students.length === 0 ? (
-                    <p className="text-emerald-600 font-semibold p-2 border rounded-xl bg-emerald-500/10">
+                    <p className="text-emerald-600 font-semibold p-2.5 border border-emerald-500/20 rounded-xl bg-emerald-500/10">
                       100% Attendance — Zero absences recorded!
                     </p>
                   ) : (
-                    <div className="flex flex-wrap gap-1 p-2 rounded-xl bg-rose-500/5 border border-rose-500/20">
+                    <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-rose-500/5 border border-rose-500/20">
                       {selectedSessionDetail.absent_students.map((st) => (
-                        <Badge key={st} variant="outline" className="text-rose-600 border-rose-500/30 text-[11px]">
+                        <Badge key={st} variant="outline" className="text-rose-600 border-rose-500/30 text-xs font-mono">
                           {st}
                         </Badge>
                       ))}
@@ -909,13 +816,13 @@ export default function FacultyAttendancePage() {
 
                 {/* Present List */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-emerald-600 uppercase flex items-center gap-1">
+                  <Label className="text-[11px] font-semibold text-emerald-600 uppercase flex items-center gap-1">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     <span>Present Students ({selectedSessionDetail.present_students.length})</span>
                   </Label>
-                  <div className="flex flex-wrap gap-1 p-2 rounded-xl bg-muted/20 border max-h-40 overflow-y-auto">
+                  <div className="flex flex-wrap gap-1 p-2 rounded-xl bg-muted/20 border border-border/80 max-h-36 overflow-y-auto">
                     {selectedSessionDetail.present_students.map((st) => (
-                      <span key={st} className="text-[11px] bg-card px-2 py-0.5 rounded border">
+                      <span key={st} className="text-[11px] bg-card px-2 py-0.5 rounded border border-border/70 font-mono">
                         {st}
                       </span>
                     ))}

@@ -228,18 +228,9 @@ export default function FacultyStudentsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-xs">
-                Enrolled Cohorts
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Authorized Faculty View</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground mt-1">
-              Student Directory
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+              Students
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Students enrolled in the classrooms and cohorts allocated to your teaching assignments.
-            </p>
           </div>
 
           <div className="flex items-center gap-2">

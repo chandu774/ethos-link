@@ -45,11 +45,13 @@ export interface AttendanceMetrics {
 }
 
 export interface ConceptMasteryData {
+  id: string;
+  conceptId: string;
   conceptName: string;
   subject: string;
   topic: string;
   masteryPercentage: number;
-  status: "Mastered" | "Developing" | "Needs Review";
+  status: "Mastered" | "Developing" | "Needs Review" | "Not Assessed";
   trend: "improving" | "declining" | "stable";
   totalQuestions: number;
   correctCount: number;
@@ -462,11 +464,14 @@ class StudentAnalyticsService {
           const correctQ = cm.correct_count || 0;
           const incorrectQ = cm.incorrect_count || (totalQ - correctQ);
 
-          let status: "Mastered" | "Developing" | "Needs Review" = "Developing";
-          if (mastery >= 80) status = "Mastered";
+          let status: "Mastered" | "Developing" | "Needs Review" | "Not Assessed" = "Developing";
+          if (totalQ === 0) status = "Not Assessed";
+          else if (mastery >= 80) status = "Mastered";
           else if (mastery < 60) status = "Needs Review";
 
           conceptMasteryList.push({
+            id: cm.id,
+            conceptId: cm.id,
             conceptName: cm.concept_name,
             subject: cm.subject || "Academic Subject",
             topic: cm.topic || "Topic",

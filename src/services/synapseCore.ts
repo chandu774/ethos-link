@@ -174,15 +174,6 @@ export interface StudentTask {
   classroomId?: string;
 }
 
-export interface AccessibilitySettings {
-  captionsEnabled: boolean;
-  signLanguageEnabled: boolean;
-  textToSpeechEnabled: boolean;
-  highContrast: boolean;
-  textSize: 'small' | 'normal' | 'large';
-  reducedMotion: boolean;
-}
-
 export interface SynapseState {
   currentRole: 'student' | 'teacher';
   learningHealth: number;
@@ -192,7 +183,6 @@ export interface SynapseState {
   recommendations: DemoRecommendation[];
   missedClass: typeof DEMO_MISSED_CLASS;
   extractedActions: ExtractedAcademicAction[];
-  accessibility: AccessibilitySettings;
   activeDemoStep: number;
   quizHistory: Record<string, { score: number; maxScore: number; date: string }>;
   tasks: StudentTask[];
@@ -235,14 +225,6 @@ const INITIAL_STATE: SynapseState = {
   recommendations: DEMO_RECOMMENDATIONS,
   missedClass: DEMO_MISSED_CLASS,
   extractedActions: DEFAULT_EXTRACTED_ACTIONS,
-  accessibility: {
-    captionsEnabled: true,
-    signLanguageEnabled: false,
-    textToSpeechEnabled: false,
-    highContrast: false,
-    textSize: "normal",
-    reducedMotion: false,
-  },
   activeDemoStep: 1,
   quizHistory: {},
   tasks: [],
@@ -753,43 +735,6 @@ export class SynapseCoreService {
       source: "Personal",
     });
     this.saveState();
-  }
-
-  // Accessibility update
-  public updateAccessibility(settings: Partial<AccessibilitySettings>) {
-    this.state.accessibility = { ...this.state.accessibility, ...settings };
-    this.saveState();
-
-    // Apply high contrast class to body
-    if (typeof document !== "undefined") {
-      if (this.state.accessibility.highContrast) {
-        document.documentElement.classList.add("high-contrast");
-      } else {
-        document.documentElement.classList.remove("high-contrast");
-      }
-    }
-  }
-
-  // Text to Speech
-  public speakText(text: string, onEnd?: () => void) {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return false;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    if (onEnd) {
-      utterance.onend = onEnd;
-    }
-    window.speechSynthesis.speak(utterance);
-    return true;
-  }
-
-  public stopSpeaking() {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
   }
 
   // Reset demo state for fresh presentation

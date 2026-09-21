@@ -290,11 +290,11 @@ export default function FacultyTeachingDetailPage() {
         {/* Navigation & Subject Header */}
         <div className="space-y-3">
           <Link
-            to="/faculty/dashboard"
+            to="/faculty/classrooms"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to My Teaching Dashboard
+            Back to My Classrooms
           </Link>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl border bg-card shadow-sm">

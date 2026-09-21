@@ -24,10 +24,6 @@ export function useSynapse() {
       synapseCore.updateTaskStatus(taskId, status),
     addTask: (title: string, subject: string, description: string, deadline: string, priority: 'HIGH' | 'MEDIUM' | 'LOW', estimatedMinutes: number) =>
       synapseCore.addTask(title, subject, description, deadline, priority, estimatedMinutes),
-    updateAccessibility: (settings: Parameters<typeof synapseCore.updateAccessibility>[0]) =>
-      synapseCore.updateAccessibility(settings),
-    speakText: (text: string, onEnd?: () => void) => synapseCore.speakText(text, onEnd),
-    stopSpeaking: () => synapseCore.stopSpeaking(),
     resetToDefaultDemo: () => synapseCore.resetToDefaultDemo(),
     switchRole: (role: 'student' | 'teacher') => synapseCore.switchRole(role),
     createClassroom: (name: string, code: string, section: string, academicYear: string, description: string, classCode?: string) =>

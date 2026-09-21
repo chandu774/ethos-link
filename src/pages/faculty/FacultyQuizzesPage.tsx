@@ -732,18 +732,9 @@ export default function FacultyQuizzesPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-xs">
-                Assessment Studio & Concept Diagnostics
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Authorized Faculty View</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground mt-1">
-              Quizzes & Diagnostics
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+              Quizzes
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Create manual quizzes or generate targeted diagnostic assessments with Synapse AI.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">

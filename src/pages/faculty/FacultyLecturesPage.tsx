@@ -281,18 +281,9 @@ export default function FacultyLecturesPage() {
         {/* Page Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="border-primary/30 bg-primary/10 text-xs font-semibold text-primary">
-                Course Resources
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Authorized Teaching Assignments</span>
-            </div>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              Course Video Lectures
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Lectures
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Post verified YouTube lectures for your subjects and classrooms. Students will see them automatically with practice quiz checkpoints.
-            </p>
           </div>
 
           <Button

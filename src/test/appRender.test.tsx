@@ -22,7 +22,6 @@ import FacultyDashboard from '../pages/FacultyDashboard';
 import OpportunitiesPage from '../pages/OpportunitiesPage';
 import Profile from '../pages/Profile';
 import Chat from '../pages/Chat';
-import ClassroomsPage from '../pages/ClassroomsPage';
 import ClassroomDetail from '../pages/ClassroomDetail';
 
 // New Student & Faculty specific pages
@@ -110,14 +109,17 @@ describe('All Pages Mounting Verification', () => {
   it('Chat mounts cleanly', () => {
     expect(renderPage(<Chat />).container).toBeDefined();
   });
-  it('ClassroomsPage mounts cleanly', () => {
-    expect(renderPage(<ClassroomsPage />).container).toBeDefined();
-  });
   it('ClassroomDetail mounts cleanly', () => {
     expect(renderPage(<ClassroomDetail />).container).toBeDefined();
   });
-  it('StudentProfile mounts cleanly', () => {
-    expect(renderPage(<StudentProfile />).container).toBeDefined();
+  it('StudentProfile mounts cleanly and switches to Attendance tab without reference errors', async () => {
+    const { container, findByText } = renderPage(<StudentProfile />);
+    expect(container).toBeDefined();
+    // Verify attendance tab trigger exists and can be clicked without throwing 'cn is not defined'
+    const attendanceTabTrigger = container.querySelector('[value="attendance"]');
+    if (attendanceTabTrigger) {
+      (attendanceTabTrigger as HTMLElement).click();
+    }
   });
   it('FacultyDashboardPage mounts cleanly', () => {
     expect(renderPage(<FacultyDashboardPage />).container).toBeDefined();

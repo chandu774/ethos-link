@@ -197,7 +197,7 @@ serve(async (req) => {
     }
 
     // Build educational search query
-    let queryParts = [subject_name, topic];
+    const queryParts = [subject_name, topic];
     if (concept && concept.trim() !== "") {
       queryParts.push(concept.trim());
     }
@@ -233,7 +233,7 @@ serve(async (req) => {
             const videoIds = items.map((it: any) => it.id?.videoId).filter(Boolean);
 
             // Fetch video details for durations and content specifications
-            let durationMap: Record<string, { duration: string; seconds: number; hasCaptions: boolean }> = {};
+            const durationMap: Record<string, { duration: string; seconds: number; hasCaptions: boolean }> = {};
             if (videoIds.length > 0) {
               const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
               videosUrl.searchParams.set("part", "contentDetails,snippet,status");

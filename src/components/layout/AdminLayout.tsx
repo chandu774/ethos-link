@@ -6,17 +6,14 @@ import {
   Users,
   Building2,
   Settings,
-  LogOut,
-  Moon,
-  Sun,
   Menu,
   Shield,
   KeyRound,
   BookOpen,
   Award,
   Video,
+  ChevronRight,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -35,13 +32,13 @@ const adminNavItems = [
   { to: "/admin/teaching-assignments", label: "Teaching Assignments", icon: BookOpen },
   { to: "/admin/lectures", label: "Lectures", icon: Video },
   { to: "/admin/opportunities", label: "Opportunities", icon: Award },
+  { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isActiveRoute = (path: string) => {
@@ -118,42 +115,23 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </nav>
 
         {/* Admin User Footer */}
-        <div className="p-3 border-t bg-card/40 space-y-2">
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-muted/40">
+        <div className="p-3 border-t bg-card/40">
+          <Link
+            to="/admin/settings"
+            className="flex items-center gap-3 p-2 rounded-xl hover:bg-muted/60 transition-colors group"
+          >
             <Avatar className="h-9 w-9 border border-rose-500/30">
               <AvatarImage src={profile?.avatar_url || ""} />
               <AvatarFallback className="bg-rose-600/10 text-rose-600 font-semibold text-xs">AD</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold truncate">{profile?.name || "System Admin"}</div>
+              <div className="text-xs font-semibold truncate group-hover:text-rose-600 transition-colors">
+                {profile?.name || "System Admin"}
+              </div>
               <div className="text-[10px] text-muted-foreground truncate">{profile?.email || "admin@synapse.edu"}</div>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-1 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            >
-              {theme === "dark" ? <Sun className="h-3.5 w-3.5 mr-1" /> : <Moon className="h-3.5 w-3.5 mr-1" />}
-              {theme === "dark" ? "Light" : "Dark"}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={async () => {
-                await signOut();
-                navigate("/admin/login");
-              }}
-            >
-              <LogOut className="h-3.5 w-3.5 mr-1" />
-              Sign Out
-            </Button>
-          </div>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </Link>
         </div>
       </aside>
 

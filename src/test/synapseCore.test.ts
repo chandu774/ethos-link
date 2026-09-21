@@ -123,10 +123,4 @@ describe('SynapseCoreService', () => {
     expect(typeof syncedTask?.title).toBe('string');
     expect(syncedTask?.title).toBe('DBMS Project Part 1');
   });
-
-  it('should toggle accessibility settings cleanly', () => {
-    synapse.updateAccessibility({ signLanguageEnabled: true, liveCaptions: true });
-    expect(synapse.getState().accessibility.signLanguageEnabled).toBe(true);
-    expect(synapse.getState().accessibility.liveCaptions).toBe(true);
-  });
 });

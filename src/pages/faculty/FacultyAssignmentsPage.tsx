@@ -364,18 +364,9 @@ export default function FacultyAssignmentsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 border-indigo-500/20 text-xs">
-                Official Coursework Studio
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Real-time Database & To-Do Sync</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground mt-1">
-              Coursework & Assignments
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+              Assignments
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Create official assignments with PDF problem sheets. Deadlines auto-synchronize to students' To-Do task managers.
-            </p>
           </div>
 
           <Button

@@ -213,19 +213,11 @@ export default function FacultyDashboardPage() {
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-xs">
-                Faculty Portal
-              </Badge>
-              <span className="text-xs text-muted-foreground">• Academic Year 2026-27</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-1">
-              Welcome back, {instructorName}
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              Dashboard
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {teachingAssignments.length > 0
-                ? `${teachingAssignments.length} active teaching assignment${teachingAssignments.length > 1 ? "s" : ""} across ${Object.keys(cohortsBySubject).length} subject${Object.keys(cohortsBySubject).length > 1 ? "s" : ""}`
-                : "No active teaching assignments currently allocated"}
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Welcome back, {instructorName}
             </p>
           </div>
 
