@@ -21,6 +21,7 @@ import notificationRoutes from "./routes/notificationRoutes";
 import storageRoutes from "./routes/storageRoutes";
 import userRoutes from "./routes/userRoutes";
 
+import { downloadFile } from "./controllers/storageController";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -36,7 +37,8 @@ if (process.env.NODE_ENV !== "test") {
   app.use(morgan("dev"));
 }
 
-// Serve uploaded static files
+// Serve uploaded static files directly from MongoDB Atlas (with local disk fallback)
+app.get("/uploads/:filename", downloadFile);
 const uploadsDir = path.join(__dirname, "../uploads");
 app.use("/uploads", express.static(uploadsDir));
 

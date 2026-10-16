@@ -21,3 +21,4 @@ export * from "./SocialChat";
 export * from "./Notification";
 export * from "./AIConversation";
 export * from "./LearningRecommendation";
+export * from "./StorageFile";
