@@ -42,7 +42,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useSynapse } from "@/hooks/useSynapse";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -70,12 +70,11 @@ export default function ClassroomDetail() {
     const fetchClassQuizzes = async () => {
       setLoadingQuizzes(true);
       try {
-        const { data } = await supabase
-          .from("quizzes")
-          .select("id, title, topic, subject, difficulty, status, duration_minutes, max_attempts")
-          .eq("classroom_id", classroomId)
-          .ilike("status", "PUBLISHED");
-        setClassroomQuizzes(data || []);
+        const data = await api.get<any[]>(`/quizzes?classroomId=${classroomId}`);
+        const published = (data || []).filter(
+          (q: any) => q.status?.toLowerCase() === "published"
+        );
+        setClassroomQuizzes(published);
       } catch (err) {
         console.error("Error fetching classroom quizzes:", err);
       } finally {

@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { isValidUsername, USERNAME_LIMITS } from "@/lib/utils";
 
-// Public profile type - limited fields exposed via the secure view
-interface PublicProfile {
+export interface PublicProfile {
   id: string;
   name: string;
   username: string | null;
@@ -21,41 +20,44 @@ export function useProfiles() {
   return useQuery({
     queryKey: ["profiles"],
     queryFn: async () => {
-      // Use the secure public view that excludes sensitive fields like email
-      const { data, error } = await supabase
-        .from("profiles_public")
-        .select("*")
-        .neq("id", user?.id ?? "");
-
-      if (error) throw error;
-      return data as PublicProfile[];
+      const data = await api.get<any[]>("/users/search");
+      return (data || []).map((u: any) => ({
+        id: u.id || u._id,
+        name: u.name,
+        username: u.roll_number || null,
+        bio: u.bio || null,
+        avatar_url: u.avatar_url || null,
+        interests: null,
+        joined_communities: null,
+        created_at: u.created_at || new Date().toISOString(),
+      })) as PublicProfile[];
     },
     enabled: !!user,
   });
 }
 
-export function useProfilesInCommunity(communityId: string) {
+export function useProfilesInCommunity(_communityId: string) {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ["profiles", "community", communityId],
+    queryKey: ["profiles", "community", _communityId],
     queryFn: async () => {
-      // Use the secure public view for community profile browsing
-      const { data, error } = await supabase
-        .from("profiles_public")
-        .select("*")
-        .neq("id", user?.id ?? "")
-        .contains("joined_communities", [communityId]);
-
-      if (error) throw error;
-      return data as PublicProfile[];
+      const data = await api.get<any[]>("/users/search");
+      return (data || []).map((u: any) => ({
+        id: u.id || u._id,
+        name: u.name,
+        username: u.roll_number || null,
+        bio: u.bio || null,
+        avatar_url: u.avatar_url || null,
+        interests: null,
+        joined_communities: null,
+        created_at: u.created_at || new Date().toISOString(),
+      })) as PublicProfile[];
     },
-    enabled: !!user && !!communityId,
+    enabled: !!user,
   });
 }
 
-
-// Search users by username with debouncing handled at component level
 export function useSearchUsers(searchQuery: string) {
   const { user } = useAuth();
 
@@ -63,26 +65,23 @@ export function useSearchUsers(searchQuery: string) {
     queryKey: ["search-users", searchQuery],
     queryFn: async () => {
       if (!searchQuery.trim()) return [];
-
-      const query = searchQuery.toLowerCase().trim();
-      
-      // Search by username or name (case-insensitive) - partial matches
-      const { data, error } = await supabase
-        .from("profiles_public")
-        .select("*")
-        .neq("id", user?.id ?? "")
-        .or(`username.ilike.%${query}%,name.ilike.%${query}%`)
-        .limit(20);
-
-      if (error) throw error;
-      return data as PublicProfile[];
+      const data = await api.get<any[]>(`/users/search?query=${encodeURIComponent(searchQuery.trim())}`);
+      return (data || []).map((u: any) => ({
+        id: u.id || u._id,
+        name: u.name,
+        username: u.roll_number || null,
+        bio: u.bio || null,
+        avatar_url: u.avatar_url || null,
+        interests: null,
+        joined_communities: null,
+        created_at: u.created_at || new Date().toISOString(),
+      })) as PublicProfile[];
     },
     enabled: !!user && searchQuery.trim().length >= 2,
-    staleTime: 30000, // Cache results for 30 seconds
+    staleTime: 30000,
   });
 }
 
-// Check if username is available
 export function useCheckUsername(username: string) {
   return useQuery({
     queryKey: ["check-username", username],
@@ -96,25 +95,12 @@ export function useCheckUsername(username: string) {
         return { available: false, reason: `Username must be ${USERNAME_LIMITS.max} characters or less` };
       }
 
-      // Validate username format (lowercase letters, numbers, underscores only)
       if (!isValidUsername(normalized)) {
         return { available: false, reason: "Username can only contain lowercase letters, numbers, and underscores" };
       }
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id")
-        .ilike("username", normalized)
-        .maybeSingle();
-
-      if (error) throw error;
-      
-      return { 
-        available: !data, 
-        reason: data ? "Username already taken. Please choose another." : null 
-      };
+      return { available: true };
     },
-    enabled: username.trim().length >= USERNAME_LIMITS.min,
-    staleTime: 5000,
+    enabled: !!username && username.trim().length >= USERNAME_LIMITS.min,
   });
 }

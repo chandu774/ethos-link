@@ -1,13 +1,25 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { Tables } from "@/integrations/supabase/types";
+import api from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-type Connection = Tables<"connections">;
-type PublicProfile = Tables<"profiles_public">;
+export interface PublicProfile {
+  id: string;
+  name: string;
+  username?: string;
+  avatar_url?: string;
+}
 
-interface ConnectionWithProfile extends Connection {
+export interface Connection {
+  id: string;
+  requester_id: string;
+  receiver_id: string;
+  status: "pending" | "accepted" | "rejected";
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ConnectionWithProfile extends Connection {
   requester: PublicProfile | null;
   receiver: PublicProfile | null;
 }
@@ -18,56 +30,38 @@ export function useConnections() {
   return useQuery({
     queryKey: ["connections", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("connections")
-        .select("*")
-        .or(`requester_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
-        .eq("status", "accepted");
+      const data = await api.get<any[]>("/chat/connections");
+      const accepted = (data || []).filter((c) => c.status === "accepted");
 
-      if (error) throw error;
-      const connections = data as Connection[];
-      if (connections.length === 0) return [] as ConnectionWithProfile[];
+      return accepted.map((c: any) => {
+        const reqObj = typeof c.requester_id === "object" ? c.requester_id : null;
+        const recObj = typeof c.receiver_id === "object" ? c.receiver_id : null;
 
-      const uniqueConnections = Array.from(
-        connections
-          .reduce((map, connection) => {
-            const partnerId =
-              connection.requester_id === user?.id ? connection.receiver_id : connection.requester_id;
-            const existing = map.get(partnerId);
-
-            if (!existing) {
-              map.set(partnerId, connection);
-              return map;
-            }
-
-            const existingUpdatedAt = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-            const nextUpdatedAt = connection.updated_at ? new Date(connection.updated_at).getTime() : 0;
-
-            if (nextUpdatedAt >= existingUpdatedAt) {
-              map.set(partnerId, connection);
-            }
-
-            return map;
-          }, new Map<string, Connection>())
-          .values()
-      );
-
-      const profileIds = Array.from(
-        new Set(uniqueConnections.flatMap((c) => [c.requester_id, c.receiver_id]))
-      );
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles_public")
-        .select("id, name, username, avatar_url")
-        .in("id", profileIds);
-
-      if (profilesError) throw profilesError;
-
-      const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
-      return uniqueConnections.map((connection) => ({
-        ...connection,
-        requester: profileMap.get(connection.requester_id) || null,
-        receiver: profileMap.get(connection.receiver_id) || null,
-      })) as ConnectionWithProfile[];
+        return {
+          id: c.id || c._id,
+          requester_id: reqObj?._id || reqObj?.id || c.requester_id,
+          receiver_id: recObj?._id || recObj?.id || c.receiver_id,
+          status: c.status,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+          requester: reqObj
+            ? {
+                id: reqObj._id || reqObj.id,
+                name: reqObj.name || "Student",
+                username: reqObj.roll_number,
+                avatar_url: reqObj.avatar_url,
+              }
+            : null,
+          receiver: recObj
+            ? {
+                id: recObj._id || recObj.id,
+                name: recObj.name || "Student",
+                username: recObj.roll_number,
+                avatar_url: recObj.avatar_url,
+              }
+            : null,
+        } as ConnectionWithProfile;
+      });
     },
     enabled: !!user,
   });
@@ -80,13 +74,13 @@ export function useAllConnectionStatuses() {
   return useQuery({
     queryKey: ["all-connection-statuses", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("connections")
-        .select("*")
-        .or(`requester_id.eq.${user?.id},receiver_id.eq.${user?.id}`);
-
-      if (error) throw error;
-      return data as Connection[];
+      const data = await api.get<any[]>("/chat/connections");
+      return (data || []).map((c: any) => ({
+        id: c.id || c._id,
+        requester_id: c.requester_id?._id || c.requester_id?.id || c.requester_id,
+        receiver_id: c.receiver_id?._id || c.receiver_id?.id || c.receiver_id,
+        status: c.status,
+      })) as Connection[];
     },
     enabled: !!user,
   });
@@ -132,30 +126,31 @@ export function usePendingRequests() {
   return useQuery({
     queryKey: ["pending-requests", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("connections")
-        .select("*")
-        .eq("receiver_id", user?.id)
-        .eq("status", "pending");
+      const data = await api.get<any[]>("/chat/connections");
+      const pending = (data || []).filter(
+        (c) =>
+          c.status === "pending" &&
+          (c.receiver_id?._id === user?.id || c.receiver_id === user?.id)
+      );
 
-      if (error) throw error;
-      const pending = data as Connection[];
-      if (pending.length === 0) return [] as ConnectionWithProfile[];
-
-      const requesterIds = Array.from(new Set(pending.map((request) => request.requester_id)));
-      const { data: requesters, error: requestersError } = await supabase
-        .from("profiles_public")
-        .select("id, name, username, avatar_url")
-        .in("id", requesterIds);
-
-      if (requestersError) throw requestersError;
-
-      const requesterMap = new Map((requesters || []).map((profile) => [profile.id, profile]));
-      return pending.map((request) => ({
-        ...request,
-        requester: requesterMap.get(request.requester_id) || null,
-        receiver: null,
-      })) as ConnectionWithProfile[];
+      return pending.map((c: any) => {
+        const reqObj = typeof c.requester_id === "object" ? c.requester_id : null;
+        return {
+          id: c.id || c._id,
+          requester_id: reqObj?._id || reqObj?.id || c.requester_id,
+          receiver_id: user?.id,
+          status: "pending",
+          requester: reqObj
+            ? {
+                id: reqObj._id || reqObj.id,
+                name: reqObj.name || "Student",
+                username: reqObj.roll_number,
+                avatar_url: reqObj.avatar_url,
+              }
+            : null,
+          receiver: null,
+        } as ConnectionWithProfile;
+      });
     },
     enabled: !!user,
   });
@@ -167,14 +162,19 @@ export function useSentRequests() {
   return useQuery({
     queryKey: ["sent-requests", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("connections")
-        .select("*")
-        .eq("requester_id", user?.id)
-        .eq("status", "pending");
+      const data = await api.get<any[]>("/chat/connections");
+      const sent = (data || []).filter(
+        (c) =>
+          c.status === "pending" &&
+          (c.requester_id?._id === user?.id || c.requester_id === user?.id)
+      );
 
-      if (error) throw error;
-      return data as Connection[];
+      return sent.map((c: any) => ({
+        id: c.id || c._id,
+        requester_id: user?.id,
+        receiver_id: c.receiver_id?._id || c.receiver_id?.id || c.receiver_id,
+        status: "pending",
+      })) as Connection[];
     },
     enabled: !!user,
   });
@@ -185,14 +185,8 @@ export function useSendConnectionRequest() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ receiverId, communityId }: { receiverId: string; communityId?: string }) => {
-      const { error } = await supabase.from("connections").insert({
-        requester_id: user!.id,
-        receiver_id: receiverId,
-        community_id: communityId,
-      });
-
-      if (error) throw error;
+    mutationFn: async ({ receiverId }: { receiverId: string; communityId?: string }) => {
+      await api.post("/chat/connections", { receiver_id: receiverId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sent-requests"] });
@@ -200,11 +194,7 @@ export function useSendConnectionRequest() {
       toast.success("Connection request sent!");
     },
     onError: (error: Error) => {
-      if (error.message.includes("duplicate")) {
-        toast.error("Connection request already sent");
-      } else {
-        toast.error("Failed to send request");
-      }
+      toast.error(error.message || "Failed to send request");
     },
   });
 }
@@ -214,12 +204,7 @@ export function useRespondToRequest() {
 
   return useMutation({
     mutationFn: async ({ connectionId, status }: { connectionId: string; status: "accepted" | "rejected" }) => {
-      const { error } = await supabase
-        .from("connections")
-        .update({ status })
-        .eq("id", connectionId);
-
-      if (error) throw error;
+      await api.patch(`/chat/connections/${connectionId}`, { status });
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["pending-requests"] });
@@ -238,12 +223,7 @@ export function useCancelRequest() {
 
   return useMutation({
     mutationFn: async (connectionId: string) => {
-      const { error } = await supabase
-        .from("connections")
-        .delete()
-        .eq("id", connectionId);
-
-      if (error) throw error;
+      await api.patch(`/chat/connections/${connectionId}`, { status: "rejected" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sent-requests"] });

@@ -1,8 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { buildStoragePath } from "@/lib/collaboration";
+import api from "@/lib/apiClient";
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
@@ -47,42 +46,6 @@ function isAllowedFile(file: File) {
   return ALLOWED_FILE_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE_BYTES;
 }
 
-function getStoragePathFromRef(fileRef: string, bucket: string) {
-  if (!/^https?:\/\//i.test(fileRef)) return fileRef;
-
-  try {
-    const url = new URL(fileRef);
-    const path = decodeURIComponent(url.pathname);
-    const patterns = [
-      `/storage/v1/object/public/${bucket}/`,
-      `/storage/v1/object/sign/${bucket}/`,
-      `/storage/v1/object/authenticated/${bucket}/`,
-      `/object/public/${bucket}/`,
-      `/object/sign/${bucket}/`,
-      `/object/authenticated/${bucket}/`,
-    ];
-
-    for (const pattern of patterns) {
-      const index = path.indexOf(pattern);
-      if (index >= 0) {
-        const objectPath = path.slice(index + pattern.length);
-        return objectPath || fileRef;
-      }
-    }
-  } catch {
-    return fileRef;
-  }
-
-  return fileRef;
-}
-
-async function toSignedUrl(fileRef: string) {
-  const objectPath = getStoragePathFromRef(fileRef, "notes");
-  const { data, error } = await supabase.storage.from("notes").createSignedUrl(objectPath, 60 * 60);
-  if (error) return fileRef;
-  return data?.signedUrl || fileRef;
-}
-
 export function useNotes({
   classroomId,
   subject,
@@ -96,45 +59,33 @@ export function useNotes({
     queryKey: ["notes", classroomId || "all", subject || "all", pageSize],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
-      let query = supabase
-        .from("notes")
-        .select(
-          `
-            id,
-            title,
-            description,
-            subject,
-            file_url,
-            classroom_id,
-            group_id,
-            user_id,
-            created_at,
-            uploader:profiles_public(id, name, username, avatar_url)
-          `
-        )
-        .order("created_at", { ascending: false });
+      const params = new URLSearchParams();
+      if (classroomId) params.append("classroomId", classroomId);
+      if (subject && subject !== "all") params.append("subject", subject);
+      params.append("page", String(pageParam + 1));
+      params.append("limit", String(pageSize));
 
-      if (classroomId) {
-        query = query.eq("classroom_id", classroomId);
-      }
-
-      if (subject && subject !== "all") {
-        query = query.eq("subject", subject);
-      }
-
-      const from = pageParam * pageSize;
-      const to = from + pageSize - 1;
-      const { data, error } = await query.range(from, to);
-      if (error) throw error;
-
-      const rows = (data || []) as NoteRow[];
-      const withUrls = await Promise.all(
-        rows.map(async (row) => ({
-          ...row,
-          download_url: await toSignedUrl(row.file_url),
-        }))
-      );
-      return withUrls;
+      const data = await api.get<any[]>(`/notes?${params.toString()}`);
+      return (data || []).map((row: any) => ({
+        id: row.id || row._id,
+        title: row.title,
+        description: row.description || null,
+        subject: row.subject,
+        file_url: row.file_url,
+        classroom_id: row.classroom_id?._id || row.classroom_id || null,
+        group_id: row.group_id || null,
+        user_id: row.user_id?._id || row.user_id,
+        created_at: row.created_at,
+        uploader: row.user_id && typeof row.user_id === "object"
+          ? {
+              id: row.user_id._id || row.user_id.id,
+              name: row.user_id.name || "Student",
+              username: row.user_id.roll_number,
+              avatar_url: row.user_id.avatar_url,
+            }
+          : null,
+        download_url: row.file_url,
+      })) as NoteItem[];
     },
     getNextPageParam: (lastPage, allPages) => (lastPage.length < pageSize ? undefined : allPages.length),
   });
@@ -164,51 +115,17 @@ export function useUploadNote() {
       if (!file) throw new Error("Attach a file.");
       if (!isAllowedFile(file)) throw new Error("Invalid file type or file is larger than 15MB.");
 
-      // Automatically determine classroom if not provided
-      let targetClassroomId = classroomId;
-      if (!targetClassroomId) {
-        const { data: memberData } = await supabase
-          .from("classroom_members")
-          .select("classroom_id")
-          .eq("student_id", user.id)
-          .maybeSingle();
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await api.upload<{ url: string }>("/storage/upload", formData);
 
-        targetClassroomId = memberData?.classroom_id || null;
-      }
-
-      if (!targetClassroomId) {
-        throw new Error("Your classroom has not been assigned yet. Please contact your administrator.");
-      }
-
-      // Storage path formatted with classroom ID prefix: {classroomId}/{userId}/{timestamp}-{filename}
-      const path = buildStoragePath(user.id, file, `${targetClassroomId}`);
-      const { error: uploadError } = await supabase.storage.from("notes").upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
+      const data = await api.post<any>("/notes", {
+        title: title.trim(),
+        description: description?.trim() || null,
+        subject: subject.trim(),
+        file_url: uploadRes.url,
+        classroom_id: classroomId || undefined,
       });
-      if (uploadError) throw uploadError;
-
-      // Insert record into notes table
-      // Note: Even if a client manipulated targetClassroomId, the database trigger
-      // 'assign_note_classroom' overrides it with the authenticated student's genuine classroom_members record!
-      const { data, error: insertError } = await supabase
-        .from("notes")
-        .insert({
-          title: title.trim(),
-          description: description?.trim() || null,
-          subject: subject.trim(),
-          file_url: path,
-          classroom_id: targetClassroomId,
-          user_id: user.id,
-        })
-        .select("id")
-        .single();
-
-      // Clean up orphaned file if database insert fails
-      if (insertError) {
-        await supabase.storage.from("notes").remove([path]);
-        throw insertError;
-      }
 
       return data;
     },
@@ -230,18 +147,7 @@ export function useDeleteNote() {
   return useMutation({
     mutationFn: async (note: Pick<NoteItem, "id" | "user_id" | "file_url">) => {
       if (!user) throw new Error("Please login first.");
-      if (note.user_id !== user.id) {
-        throw new Error("Only the uploader can delete this note.");
-      }
-
-      const objectPath = getStoragePathFromRef(note.file_url, "notes");
-      const { error: storageError } = await supabase.storage.from("notes").remove([objectPath]);
-      if (storageError) {
-        console.warn("Storage removal note warning:", storageError);
-      }
-
-      const { error } = await supabase.from("notes").delete().eq("id", note.id);
-      if (error) throw error;
+      await api.delete(`/notes/${note.id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });

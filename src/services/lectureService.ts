@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 
 export interface LectureItem {
   id: string;
@@ -94,7 +94,7 @@ class LectureService {
   }
 
   /**
-   * Calls server-side Edge Function to fetch public YouTube video metadata safely
+   * Calls backend YouTube controller to fetch public YouTube video metadata safely
    */
   public async fetchYouTubeMetadata(
     urlOrId: string,
@@ -109,16 +109,13 @@ class LectureService {
         };
       }
 
-      const { data, error } = await supabase.functions.invoke("youtube-metadata", {
-        body: {
-          youtube_url: urlOrId,
-          video_id: videoId,
-          fallback_title: fallbackTitle,
-        },
+      const res = await api.post<any>("/youtube/metadata", {
+        youtube_url: urlOrId,
+        video_id: videoId,
+        fallback_title: fallbackTitle,
       });
 
-      if (error || !data || !data.success) {
-        // Safe fallback without fabricating: return basic YouTube URL with standard thumbnail
+      if (!res || !res.success) {
         return {
           success: true,
           videoId,
@@ -133,14 +130,14 @@ class LectureService {
 
       return {
         success: true,
-        videoId: data.videoId,
-        videoUrl: data.videoUrl,
-        title: data.title || fallbackTitle || "YouTube Lecture Video",
-        channelName: data.channelName || "YouTube Educator",
-        thumbnailUrl: data.thumbnailUrl || `https://img.youtube.com/vi/${data.videoId}/hqdefault.jpg`,
-        duration: data.duration || "15:00",
-        hasCaptions: data.hasCaptions || false,
-        publishedAt: data.publishedAt,
+        videoId: res.videoId || videoId,
+        videoUrl: res.videoUrl || `https://www.youtube.com/watch?v=${videoId}`,
+        title: res.title || fallbackTitle || "YouTube Lecture Video",
+        channelName: res.channelName || "YouTube Educator",
+        thumbnailUrl: res.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        duration: res.duration || "15:00",
+        hasCaptions: res.hasCaptions || false,
+        publishedAt: res.publishedAt,
       };
     } catch (err: any) {
       console.warn("Failed to fetch YouTube metadata, using fallback:", err);
@@ -164,60 +161,44 @@ class LectureService {
    * Fetches authorized teaching assignments for a faculty member
    */
   public async getFacultyTeachingAssignments(
-    facultyId: string
+    _facultyId?: string
   ): Promise<TeachingAssignmentOption[]> {
-    const { data, error } = await supabase
-      .from("teaching_assignments")
-      .select(`
-        id,
-        faculty_id,
-        classroom_id,
-        subject_name,
-        subject_code,
-        classroom:classrooms!teaching_assignments_classroom_id_fkey(
-          id,
-          name,
-          course,
-          branch,
-          year,
-          section
-        )
-      `)
-      .eq("faculty_id", facultyId);
+    try {
+      const data = await api.get<any[]>("/classrooms/faculty/assigned");
+      if (!data || !Array.isArray(data)) return [];
 
-    if (error || !data) return [];
-
-    return data.map((row: any) => ({
-      id: row.id,
-      facultyId: row.faculty_id,
-      classroomId: row.classroom_id,
-      subjectName: row.subject_name,
-      subjectCode: row.subject_code,
-      classroomName: row.classroom?.name || "Classroom",
-      course: row.classroom?.course || "B.Tech",
-      branch: row.classroom?.branch || "CSE",
-      year: row.classroom?.year || 1,
-      section: row.classroom?.section || "A",
-    }));
+      return data.map((row: any) => ({
+        id: row.id || row._id,
+        facultyId: row.faculty_id?._id || row.faculty_id || "",
+        classroomId: row.classroom_id?._id || row.classroom_id?.id || row.classroom_id || "",
+        subjectName: row.subject_name || "General Subject",
+        subjectCode: row.subject_code || "GEN101",
+        classroomName: row.classroom_id?.name || row.classroom?.name || "Classroom",
+        course: row.classroom_id?.course || row.classroom?.course || "B.Tech",
+        branch: row.classroom_id?.branch || row.classroom?.branch || "CSE",
+        year: Number(row.classroom_id?.year || row.classroom?.year || 1),
+        section: row.classroom_id?.section || row.classroom?.section || "A",
+      }));
+    } catch (err) {
+      console.error("Error fetching teaching assignments:", err);
+      return [];
+    }
   }
 
   /**
    * Fetches all lectures posted by or assigned to a faculty member
    */
-  public async getFacultyLectures(facultyId: string): Promise<LectureItem[]> {
-    const { data, error } = await supabase
-      .from("lectures")
-      .select(`
-        *,
-        classroom:classrooms!lectures_classroom_id_fkey(name, course, branch, year, section),
-        faculty:profiles!lectures_faculty_id_fkey(name)
-      `)
-      .eq("faculty_id", facultyId)
-      .order("created_at", { ascending: false });
-
-    if (error || !data) return [];
-
-    return data.map((r: any) => this.mapDbRowToLectureItem(r));
+  public async getFacultyLectures(facultyId?: string): Promise<LectureItem[]> {
+    try {
+      const data = await api.get<any[]>("/lectures", {
+        headers: facultyId ? {} : undefined,
+      });
+      if (!data || !Array.isArray(data)) return [];
+      return data.map((r: any) => this.mapDbRowToLectureItem(r));
+    } catch (err) {
+      console.error("Error fetching faculty lectures:", err);
+      return [];
+    }
   }
 
   /**
@@ -240,43 +221,30 @@ class LectureService {
         return { error: "Please provide a valid YouTube URL." };
       }
 
-      // Fetch metadata from Edge Function
+      // Fetch metadata from backend
       const meta = await this.fetchYouTubeMetadata(params.youtubeUrl, params.title);
 
       const finalTitle = params.title.trim() || meta.title || "Lecture Video";
       const finalUrl = `https://www.youtube.com/watch?v=${videoId}`;
       const finalThumbnail = meta.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-      const { data, error } = await supabase
-        .from("lectures")
-        .insert({
-          teaching_assignment_id: params.teachingAssignmentId,
-          faculty_id: params.facultyId,
-          classroom_id: params.classroomId,
-          subject_name: params.subjectName,
-          subject_code: params.subjectCode || null,
-          topic: params.topic.trim(),
-          title: finalTitle,
-          description: params.description?.trim() || null,
-          youtube_video_id: videoId,
-          youtube_url: finalUrl,
-          thumbnail_url: finalThumbnail,
-          channel_name: meta.channelName || "YouTube Educator",
-          duration: meta.duration || "15:00",
-          has_captions: meta.hasCaptions || false,
-          status: "PUBLISHED",
-          published_at: new Date().toISOString(),
-        })
-        .select(`
-          *,
-          classroom:classrooms!lectures_classroom_id_fkey(name, course, branch, year, section),
-          faculty:profiles!lectures_faculty_id_fkey(name)
-        `)
-        .single();
-
-      if (error) {
-        return { error: error.message };
-      }
+      const data = await api.post<any>("/lectures", {
+        teaching_assignment_id: params.teachingAssignmentId,
+        classroom_id: params.classroomId,
+        subject_name: params.subjectName,
+        subject_code: params.subjectCode || null,
+        topic: params.topic.trim(),
+        title: finalTitle,
+        description: params.description?.trim() || null,
+        youtube_video_id: videoId,
+        youtube_url: finalUrl,
+        thumbnail_url: finalThumbnail,
+        channel_name: meta.channelName || "YouTube Educator",
+        duration: meta.duration || "15:00",
+        has_captions: meta.hasCaptions || false,
+        topics: [params.topic.trim()],
+        concepts_taught: [params.topic.trim()],
+      });
 
       return { lecture: this.mapDbRowToLectureItem(data) };
     } catch (err: any) {
@@ -289,7 +257,7 @@ class LectureService {
    */
   public async updateFacultyLecture(
     lectureId: string,
-    facultyId: string,
+    _facultyId: string,
     updates: {
       title?: string;
       topic?: string;
@@ -297,17 +265,19 @@ class LectureService {
       status?: "PUBLISHED" | "ARCHIVED";
     }
   ): Promise<{ success: boolean; error?: string }> {
-    const { error } = await supabase
-      .from("lectures")
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", lectureId)
-      .eq("faculty_id", facultyId);
-
-    if (error) return { success: false, error: error.message };
-    return { success: true };
+    try {
+      const body: any = { ...updates };
+      if (updates.status) {
+        body.is_archived = updates.status === "ARCHIVED";
+      }
+      if (updates.topic) {
+        body.topics = [updates.topic];
+      }
+      await api.patch(`/lectures/${lectureId}`, body);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to update lecture" };
+    }
   }
 
   /**
@@ -326,80 +296,52 @@ class LectureService {
    */
   public async deleteFacultyLecture(
     lectureId: string,
-    facultyId: string
+    _facultyId?: string
   ): Promise<{ success: boolean; error?: string }> {
-    const { error } = await supabase
-      .from("lectures")
-      .delete()
-      .eq("id", lectureId)
-      .eq("faculty_id", facultyId);
-
-    if (error) return { success: false, error: error.message };
-    return { success: true };
+    try {
+      await api.delete(`/lectures/${lectureId}`);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to delete lecture" };
+    }
   }
 
   /**
    * Fetches published lectures for a student based on their enrolled classroom
    */
-  public async getStudentClassroomLectures(studentId: string): Promise<{
+  public async getStudentClassroomLectures(_studentId?: string): Promise<{
     lectures: LectureItem[];
     classroomName?: string;
   }> {
-    // 1. Get student's classroom
-    const { data: memberData } = await supabase
-      .from("classroom_members")
-      .select(`
-        classroom_id,
-        classroom:classrooms!classroom_members_classroom_id_fkey(name)
-      `)
-      .eq("student_id", studentId)
-      .maybeSingle();
+    try {
+      const data = await api.get<any[]>("/lectures");
+      if (!data || !Array.isArray(data)) {
+        return { lectures: [] };
+      }
 
-    if (!memberData?.classroom_id) {
+      const classroomName = data[0]?.classroom_id?.name || "Enrolled Classroom";
+      return {
+        lectures: data.map((r: any) => this.mapDbRowToLectureItem(r)),
+        classroomName,
+      };
+    } catch (err) {
+      console.error("Error fetching student lectures:", err);
       return { lectures: [] };
     }
-
-    const classroomId = memberData.classroom_id;
-    const classroomName = (memberData.classroom as any)?.name || "Enrolled Classroom";
-
-    // 2. Fetch PUBLISHED lectures for this classroom
-    const { data: lectureRows, error } = await supabase
-      .from("lectures")
-      .select(`
-        *,
-        classroom:classrooms!lectures_classroom_id_fkey(name, course, branch, year, section),
-        faculty:profiles!lectures_faculty_id_fkey(name)
-      `)
-      .eq("classroom_id", classroomId)
-      .eq("status", "PUBLISHED")
-      .order("created_at", { ascending: false });
-
-    if (error || !lectureRows) {
-      return { lectures: [], classroomName };
-    }
-
-    return {
-      lectures: lectureRows.map((r: any) => this.mapDbRowToLectureItem(r)),
-      classroomName,
-    };
   }
 
   /**
    * Fetches a single lecture by ID with classroom verification
    */
   public async getLectureById(lectureId: string): Promise<LectureItem | null> {
-    const { data, error } = await supabase
-      .from("lectures")
-      .select(`
-        *,
-        classroom:classrooms!lectures_classroom_id_fkey(name, course, branch, year, section),
-        faculty:profiles!lectures_faculty_id_fkey(name)
-      `)
-      .eq("id", lectureId)
-      .maybeSingle();
-
-    if (error || !data) return null;
-    return this.mapDbRowToLectureItem(data);
+    try {
+      const data = await api.get<any>(`/lectures/${lectureId}`);
+      if (!data) return null;
+      return this.mapDbRowToLectureItem(data);
+    } catch (err) {
+      console.error("Error fetching lecture by id:", err);
+      return null;
+    }
   }
 
   /**
@@ -411,48 +353,22 @@ class LectureService {
     teachingAssignmentId?: string
   ): Promise<RelatedQuizItem | null> {
     try {
-      // First try matching by exact teaching_assignment_id and topic
-      if (teachingAssignmentId) {
-        const { data: exactQuiz } = await supabase
-          .from("quizzes")
-          .select("id, title, topic, subject, duration_minutes, difficulty, status")
-          .eq("teaching_assignment_id", teachingAssignmentId)
-          .eq("status", "PUBLISHED")
-          .ilike("topic", `%${topic.trim()}%`)
-          .limit(1)
-          .maybeSingle();
+      const params = new URLSearchParams();
+      if (subjectName) params.append("subject", subjectName);
+      if (topic) params.append("topic", topic);
+      if (teachingAssignmentId) params.append("teachingAssignmentId", teachingAssignmentId);
 
-        if (exactQuiz) {
-          return {
-            id: exactQuiz.id,
-            title: exactQuiz.title,
-            topic: exactQuiz.topic,
-            subject: exactQuiz.subject,
-            durationMinutes: exactQuiz.duration_minutes || 15,
-            difficulty: exactQuiz.difficulty || "MEDIUM",
-            status: exactQuiz.status,
-          };
-        }
-      }
-
-      // Fallback: match by subject and topic across published quizzes
-      const { data: fallbackQuiz } = await supabase
-        .from("quizzes")
-        .select("id, title, topic, subject, duration_minutes, difficulty, status")
-        .eq("status", "PUBLISHED")
-        .ilike("topic", `%${topic.trim()}%`)
-        .limit(1)
-        .maybeSingle();
-
-      if (fallbackQuiz) {
+      const quizzes = await api.get<any[]>(`/quizzes?${params.toString()}`);
+      if (quizzes && quizzes.length > 0) {
+        const q = quizzes[0];
         return {
-          id: fallbackQuiz.id,
-          title: fallbackQuiz.title,
-          topic: fallbackQuiz.topic,
-          subject: fallbackQuiz.subject,
-          durationMinutes: fallbackQuiz.duration_minutes || 15,
-          difficulty: fallbackQuiz.difficulty || "MEDIUM",
-          status: fallbackQuiz.status,
+          id: q.id || q._id,
+          title: q.title,
+          topic: q.topic || "",
+          subject: q.subject || null,
+          durationMinutes: q.duration_minutes || 15,
+          difficulty: q.difficulty || "MEDIUM",
+          status: q.status || "PUBLISHED",
         };
       }
     } catch (err) {
@@ -466,17 +382,14 @@ class LectureService {
    * Institutional oversight: Fetches all lectures for Administrators
    */
   public async getAllInstitutionalLectures(): Promise<LectureItem[]> {
-    const { data, error } = await supabase
-      .from("lectures")
-      .select(`
-        *,
-        classroom:classrooms!lectures_classroom_id_fkey(name, course, branch, year, section),
-        faculty:profiles!lectures_faculty_id_fkey(name)
-      `)
-      .order("created_at", { ascending: false });
-
-    if (error || !data) return [];
-    return data.map((r: any) => this.mapDbRowToLectureItem(r));
+    try {
+      const data = await api.get<any[]>("/lectures?includeArchived=true");
+      if (!data || !Array.isArray(data)) return [];
+      return data.map((r: any) => this.mapDbRowToLectureItem(r));
+    } catch (err) {
+      console.error("Error fetching institutional lectures:", err);
+      return [];
+    }
   }
 
   /**
@@ -486,45 +399,56 @@ class LectureService {
     lectureId: string,
     status: "PUBLISHED" | "ARCHIVED"
   ): Promise<boolean> {
-    const { error } = await supabase
-      .from("lectures")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", lectureId);
-
-    return !error;
+    try {
+      await api.patch(`/lectures/${lectureId}`, {
+        is_archived: status === "ARCHIVED",
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   public async adminDeleteLecture(lectureId: string): Promise<boolean> {
-    const { error } = await supabase.from("lectures").delete().eq("id", lectureId);
-    return !error;
+    try {
+      await api.delete(`/lectures/${lectureId}`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private mapDbRowToLectureItem(r: any): LectureItem {
+    const isArchived = Boolean(r.is_archived || r.status === "ARCHIVED");
+    const cl = r.classroom_id || r.classroom;
+    const ta = r.teaching_assignment_id;
+    const fac = r.faculty_id || r.faculty;
+
     return {
-      id: r.id,
-      teachingAssignmentId: r.teaching_assignment_id,
-      facultyId: r.faculty_id,
-      classroomId: r.classroom_id,
-      subjectName: r.subject_name,
-      subjectCode: r.subject_code,
-      topic: r.topic,
-      title: r.title,
-      description: r.description,
-      youtubeVideoId: r.youtube_video_id,
-      youtubeUrl: r.youtube_url,
-      thumbnailUrl: r.thumbnail_url,
-      channelName: r.channel_name,
+      id: r.id || r._id,
+      teachingAssignmentId: ta?._id || ta?.id || r.teaching_assignment_id || "",
+      facultyId: fac?._id || fac?.id || r.faculty_id || "",
+      classroomId: cl?._id || cl?.id || r.classroom_id || "",
+      subjectName: ta?.subject_name || r.subject_name || "General Subject",
+      subjectCode: ta?.subject_code || r.subject_code || null,
+      topic: Array.isArray(r.topics) && r.topics.length > 0 ? r.topics[0] : (r.topic || "Core Topic"),
+      title: r.title || "Lecture Video",
+      description: r.description || null,
+      youtubeVideoId: r.youtube_video_id || "",
+      youtubeUrl: r.youtube_url || "",
+      thumbnailUrl: r.thumbnail_url || `https://img.youtube.com/vi/${r.youtube_video_id}/hqdefault.jpg`,
+      channelName: r.channel_name || "YouTube Educator",
       duration: r.duration || "15:00",
-      hasCaptions: r.has_captions || false,
-      status: r.status,
-      publishedAt: r.published_at,
-      createdAt: r.created_at,
-      facultyName: r.faculty?.name || "Faculty Member",
-      classroomName: r.classroom?.name || "Classroom",
-      course: r.classroom?.course,
-      branch: r.classroom?.branch,
-      year: r.classroom?.year,
-      section: r.classroom?.section,
+      hasCaptions: Boolean(r.has_captions),
+      status: isArchived ? "ARCHIVED" : "PUBLISHED",
+      publishedAt: r.published_at || r.created_at || new Date().toISOString(),
+      createdAt: r.created_at || new Date().toISOString(),
+      facultyName: fac?.full_name || fac?.name || "Faculty Member",
+      classroomName: cl?.name || "Classroom",
+      course: cl?.course,
+      branch: cl?.branch,
+      year: cl?.year ? Number(cl.year) : undefined,
+      section: cl?.section,
     };
   }
 }

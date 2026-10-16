@@ -70,7 +70,7 @@ import { cn, formatUsername } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { GroupAvatar } from "@/components/ui/group-avatar";
 import { uploadAvatarFile } from "@/lib/storage";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AcademicActionBanner } from "@/components/chat/AcademicActionBanner";
 
@@ -125,7 +125,7 @@ export default function Chat() {
   const reactionPickerRef = useRef<HTMLDivElement | null>(null);
   const messageBubbleRefs = useRef(new Map<string, HTMLDivElement>());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingChannelRef = useRef<any>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -473,20 +473,15 @@ export default function Chat() {
     queryKey: ["member-profile", selectedMemberId],
     queryFn: async () => {
       if (!selectedMemberId) return selectedMemberFromGroup;
-      const { data, error } = await supabase
-        .from("profiles_public")
-        .select("id, name, username, bio, avatar_url")
-        .eq("id", selectedMemberId)
-        .maybeSingle();
-
-      if (error) {
+      try {
+        const data = await api.get(`/users/profile/${selectedMemberId}`);
+        return data ?? selectedMemberFromGroup;
+      } catch (error) {
         if (import.meta.env.DEV) {
           console.warn("Member profile fetch failed; using group data fallback.", error);
         }
         return selectedMemberFromGroup;
       }
-
-      return data ?? selectedMemberFromGroup;
     },
     enabled: !!selectedMemberId && showMemberProfile,
   });
@@ -529,28 +524,12 @@ export default function Chat() {
 
   useEffect(() => {
     if (!user || selectedChat?.type !== "direct" || !selectedChat.partnerId) return;
-
-    const channelId = [user.id, selectedChat.partnerId].sort().join(":");
-    const channel = supabase.channel(`typing-${channelId}`);
-    typingChannelRef.current = channel;
-
-    channel.on("broadcast", { event: "typing" }, (payload) => {
-      const data = payload.payload as { userId?: string; isTyping?: boolean };
-      if (data?.userId === selectedChat.partnerId) {
-        setIsPartnerTyping(!!data.isTyping);
-      }
-    });
-
-    channel.subscribe();
-
     return () => {
-      typingChannelRef.current = null;
       setIsPartnerTyping(false);
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
       }
-      supabase.removeChannel(channel);
     };
   }, [selectedChat?.partnerId, selectedChat?.type, user]);
 
@@ -568,20 +547,11 @@ export default function Chat() {
 
     if (unseenIds.length === 0) return;
 
-    const now = new Date().toISOString();
-    supabase
-      .from("messages")
-      .update({ status: "seen", seen_at: now, delivered_at: now })
-      .in("id", unseenIds);
+    api.patch("/chat/messages/seen", { messageIds: unseenIds }).catch(() => {});
   }, [messages, selectedChat?.partnerId, selectedChat?.type, user]);
 
-  const sendTypingStatus = (isTyping: boolean) => {
-    if (selectedChat?.type !== "direct" || !selectedChat.partnerId || !user) return;
-    typingChannelRef.current?.send({
-      type: "broadcast",
-      event: "typing",
-      payload: { userId: user.id, isTyping },
-    });
+  const sendTypingStatus = (_isTyping: boolean) => {
+    // Typing status placeholder
   };
 
   const handleSendMessage = () => {

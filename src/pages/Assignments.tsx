@@ -32,7 +32,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSynapse } from "@/hooks/useSynapse";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface RealAssignment {
@@ -76,13 +76,11 @@ export default function AssignmentsPage() {
   const { data: assignments = [], isLoading: loadingAssignments } = useQuery({
     queryKey: ["student_assignments"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("assignments")
-        .select("*")
-        .order("deadline", { ascending: true });
-
-      if (error) throw error;
-      return (data || []) as RealAssignment[];
+      const data = await api.get<any[]>("/assignments");
+      return (data || []).map((a: any) => ({
+        ...a,
+        id: a.id || a._id,
+      })) as RealAssignment[];
     },
   });
 
@@ -91,13 +89,20 @@ export default function AssignmentsPage() {
     queryKey: ["student_submissions", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from("assignment_submissions")
-        .select("*")
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-      return (data || []) as StudentSubmission[];
+      const data = await api.get<any[]>("/assignments");
+      return (data || [])
+        .filter((a: any) => a.submission)
+        .map((a: any) => ({
+          id: a.submission.id || a.submission._id,
+          assignment_id: a.id || a._id,
+          user_id: a.submission.user_id,
+          submission_text: a.submission.submission_text,
+          attachment_url: a.submission.attachment_url,
+          attachment_name: a.submission.attachment_name,
+          submitted_at: a.submission.submitted_at,
+          status: a.submission.status,
+          marks_obtained: a.submission.marks_obtained,
+        })) as StudentSubmission[];
     },
     enabled: !!user,
   });
@@ -127,42 +132,18 @@ export default function AssignmentsPage() {
           return;
         }
 
-        const cleanName = pdfFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const filePath = `${user.id}/${selectedAssignment.id}_${Date.now()}_${cleanName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("submission-files")
-          .upload(filePath, pdfFile, { contentType: "application/pdf", upsert: true });
-
-        if (uploadError) {
-          console.error("PDF upload error:", uploadError);
-          toast.error("Failed to upload solution PDF: " + uploadError.message);
-          setSubmitting(false);
-          return;
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from("submission-files")
-          .getPublicUrl(filePath);
-
-        attachmentUrl = publicUrl;
+        const formData = new FormData();
+        formData.append("file", pdfFile);
+        const uploadRes = await api.upload<any>("/storage/upload", formData);
+        attachmentUrl = uploadRes.publicUrl || uploadRes.fileUrl;
         attachmentName = pdfFile.name;
       }
 
-      // Insert submission into database
-      const { error: subError } = await supabase
-        .from("assignment_submissions")
-        .insert({
-          assignment_id: selectedAssignment.id,
-          user_id: user.id,
-          submission_text: submissionText.trim() || null,
-          attachment_url: attachmentUrl,
-          attachment_name: attachmentName,
-          status: "submitted",
-          submitted_at: new Date().toISOString(),
-        });
-
-      if (subError) throw subError;
+      await api.post(`/assignments/${selectedAssignment.id}/submit`, {
+        submission_text: submissionText.trim() || undefined,
+        attachment_url: attachmentUrl,
+        attachment_name: attachmentName,
+      });
 
       // Update in-memory synapseCore tasks for immediate reactive task sync
       synapse.submitStudentAssignment(selectedAssignment.id, "c1", submissionText);

@@ -1,16 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
-import {
-  buildStoragePath,
-  type CollaborationAssignment,
-  type CollaborationSubmission,
-  uploadCollaborationFile,
+import api from "@/lib/apiClient";
+import type {
+  CollaborationAssignment,
+  CollaborationSubmission,
 } from "@/lib/collaboration";
 
-type PublicProfile = Pick<Tables<"profiles_public">, "id" | "name" | "username" | "avatar_url">;
+type PublicProfile = {
+  id: string;
+  name: string;
+  username?: string;
+  avatar_url?: string;
+};
+
 export type SubmissionWithUser = CollaborationSubmission & {
   user?: PublicProfile | null;
 };
@@ -19,19 +22,20 @@ export function useAssignments(groupId: string | null) {
   return useQuery({
     queryKey: ["assignments", groupId],
     queryFn: async () => {
-      let query = supabase
-        .from("assignments")
-        .select("*")
-        .order("deadline", { ascending: true });
-
-      if (groupId) {
-        query = query.eq("group_id", groupId);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      return (data || []) as CollaborationAssignment[];
+      const data = await api.get<any[]>("/assignments");
+      return (data || []).map((a: any) => ({
+        id: a.id || a._id,
+        group_id: a.classroom_id?._id || a.classroom_id || groupId || "",
+        title: a.title,
+        description: a.description,
+        deadline: a.deadline,
+        created_by: a.created_by?._id || a.created_by || "",
+        created_at: a.created_at,
+        attachment_url: a.attachment_url,
+        attachment_name: a.attachment_name,
+        subject: a.teaching_assignment_id?.subject_name || a.topic || "Coursework",
+        max_marks: a.max_marks,
+      })) as CollaborationAssignment[];
     },
     enabled: true,
   });
@@ -57,38 +61,38 @@ export function useCreateAssignment(defaultGroupId?: string) {
     }) => {
       if (!user) throw new Error("Not authenticated");
       const targetGroupId = groupId || defaultGroupId;
-      if (!targetGroupId) throw new Error("Please select a group");
 
       let attachmentUrl: string | null = null;
       let attachmentName: string | null = null;
 
       if (file) {
-        const path = buildStoragePath(user.id, file, targetGroupId);
-        await uploadCollaborationFile({
-          bucket: "assignment-files",
-          path,
-          file,
-        });
-        attachmentUrl = path;
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await api.upload<{ url: string }>("/storage/upload", formData);
+        attachmentUrl = uploadRes.url;
         attachmentName = file.name;
       }
 
-      const { data, error } = await supabase
-        .from("assignments")
-        .insert({
-          group_id: targetGroupId,
-          title: title.trim(),
-          description: description?.trim() || null,
-          deadline,
-          created_by: user.id,
-          attachment_url: attachmentUrl,
-          attachment_name: attachmentName,
-        })
-        .select("*")
-        .single();
+      const data = await api.post<any>("/assignments", {
+        classroom_id: targetGroupId,
+        title: title.trim(),
+        description: description?.trim() || null,
+        deadline,
+        attachment_url: attachmentUrl,
+        attachment_name: attachmentName,
+      });
 
-      if (error) throw error;
-      return data as CollaborationAssignment;
+      return {
+        id: data.id || data._id,
+        group_id: targetGroupId || "",
+        title: data.title,
+        description: data.description,
+        deadline: data.deadline,
+        created_by: user.id,
+        created_at: data.created_at,
+        attachment_url: data.attachment_url,
+        attachment_name: data.attachment_name,
+      } as CollaborationAssignment;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assignments"] });
@@ -96,13 +100,7 @@ export function useCreateAssignment(defaultGroupId?: string) {
       toast.success("Assignment created");
     },
     onError: (error: Error) => {
-      const maybeCode = (error as Error & { code?: string }).code;
-      const message = error.message || "Failed to create assignment";
-      if (maybeCode === "42P01" || message.includes("does not exist")) {
-        toast.error("Assignments table is missing. Run Supabase migrations first.");
-        return;
-      }
-      toast.error(message);
+      toast.error(error.message || "Failed to create assignment");
     },
   });
 }
@@ -112,17 +110,20 @@ export function useAssignmentDetails(assignmentId: string | null) {
     queryKey: ["assignment-details", assignmentId],
     queryFn: async () => {
       if (!assignmentId) return null;
-
-      const { data, error } = await supabase
-        .from("assignments")
-        .select("*")
-        .eq("id", assignmentId)
-        .maybeSingle();
-
-      if (error) throw error;
+      const data = await api.get<any>(`/assignments/${assignmentId}`);
       if (!data) return null;
 
-      return data as CollaborationAssignment;
+      return {
+        id: data.id || data._id,
+        group_id: data.classroom_id?._id || data.classroom_id || "",
+        title: data.title,
+        description: data.description,
+        deadline: data.deadline,
+        created_by: data.created_by?._id || data.created_by || "",
+        created_at: data.created_at,
+        attachment_url: data.attachment_url,
+        attachment_name: data.attachment_name,
+      } as CollaborationAssignment;
     },
     enabled: !!assignmentId,
   });
@@ -133,15 +134,10 @@ export function useRemoveAssignmentAttachment() {
 
   return useMutation({
     mutationFn: async (assignmentId: string) => {
-      const { error } = await supabase
-        .from("assignments")
-        .update({
-          attachment_url: null,
-          attachment_name: null,
-        })
-        .eq("id", assignmentId);
-
-      if (error) throw error;
+      await api.patch(`/assignments/${assignmentId}`, {
+        attachment_url: null,
+        attachment_name: null,
+      });
     },
     onSuccess: (_, assignmentId) => {
       queryClient.invalidateQueries({ queryKey: ["assignment-details", assignmentId] });
@@ -165,11 +161,7 @@ export function useUpdateAssignment(groupId: string) {
       assignmentId: string;
       updates: Partial<Pick<CollaborationAssignment, "title" | "description" | "deadline">>;
     }) => {
-      const { error } = await supabase
-        .from("assignments")
-        .update(updates)
-        .eq("id", assignmentId);
-      if (error) throw error;
+      await api.patch(`/assignments/${assignmentId}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assignments", groupId] });
@@ -186,8 +178,7 @@ export function useDeleteAssignment(groupId: string) {
 
   return useMutation({
     mutationFn: async (assignmentId: string) => {
-      const { error } = await supabase.from("assignments").delete().eq("id", assignmentId);
-      if (error) throw error;
+      await api.delete(`/assignments/${assignmentId}`);
     },
     onSuccess: (_, assignmentId) => {
       queryClient.invalidateQueries({ queryKey: ["assignments", groupId] });
@@ -206,17 +197,27 @@ export function useAssignmentSubmissions(assignmentId: string | null) {
     queryKey: ["assignment-submissions", assignmentId],
     queryFn: async () => {
       if (!assignmentId) return [] as SubmissionWithUser[];
-      const { data, error } = await supabase
-        .from("submissions")
-        .select(`
-          *,
-          user:profiles_public(id, name, username, avatar_url)
-        `)
-        .eq("assignment_id", assignmentId)
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-
-      return (data || []) as SubmissionWithUser[];
+      const data = await api.get<any[]>(`/assignments/${assignmentId}/submissions`);
+      return (data || []).map((s: any) => ({
+        id: s.id || s._id,
+        assignment_id: s.assignment_id,
+        user_id: s.user_id?._id || s.user_id,
+        file_url: s.attachment_url || s.file_url,
+        file_name: s.file_name || "submitted_file",
+        status: s.status,
+        comment: s.submission_text || s.comment,
+        submitted_at: s.submitted_at,
+        marks_obtained: s.marks_obtained,
+        feedback: s.feedback,
+        user: s.user_id && typeof s.user_id === "object"
+          ? {
+              id: s.user_id._id || s.user_id.id,
+              name: s.user_id.name || "Student",
+              username: s.user_id.roll_number,
+              avatar_url: s.user_id.avatar_url,
+            }
+          : null,
+      })) as SubmissionWithUser[];
     },
     enabled: !!assignmentId,
   });
@@ -234,38 +235,33 @@ export function useSubmitAssignment(assignmentId: string) {
       let fileName: string | null = null;
 
       if (file) {
-        const path = buildStoragePath(user.id, file, assignmentId);
-        await uploadCollaborationFile({
-          bucket: "submission-files",
-          path,
-          file,
-        });
-        fileUrl = path;
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await api.upload<{ url: string }>("/storage/upload", formData);
+        fileUrl = uploadRes.url;
         fileName = file.name;
       }
 
-      const { data, error } = await supabase
-        .from("submissions")
-        .upsert(
-          {
-            assignment_id: assignmentId,
-            user_id: user.id,
-            file_url: fileUrl,
-            file_name: fileName,
-            status: fileUrl ? "submitted" : "pending",
-            comment: comment?.trim() || null,
-            submitted_at: fileUrl ? new Date().toISOString() : null,
-          },
-          { onConflict: "assignment_id,user_id" }
-        )
-        .select("*")
-        .single();
+      const data = await api.post<any>(`/assignments/${assignmentId}/submit`, {
+        submission_text: comment?.trim() || null,
+        attachment_url: fileUrl,
+        file_name: fileName,
+      });
 
-      if (error) throw error;
-      return data as CollaborationSubmission;
+      return {
+        id: data.id || data._id,
+        assignment_id: assignmentId,
+        user_id: user.id,
+        file_url: fileUrl,
+        file_name: fileName,
+        status: "submitted",
+        comment: comment?.trim() || null,
+        submitted_at: new Date().toISOString(),
+      } as CollaborationSubmission;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assignment-submissions", assignmentId] });
+      queryClient.invalidateQueries({ queryKey: ["assignments"] });
       toast.success("Submission saved");
     },
     onError: (error: Error) => {
@@ -279,17 +275,12 @@ export function useRemoveSubmissionFile(assignmentId: string) {
 
   return useMutation({
     mutationFn: async (submissionId: string) => {
-      const { error } = await supabase
-        .from("submissions")
-        .update({
-          file_url: null,
-          file_name: null,
-          status: "pending",
-          submitted_at: null,
-        })
-        .eq("id", submissionId);
-
-      if (error) throw error;
+      await api.patch(`/assignments/${assignmentId}/submissions/${submissionId}`, {
+        attachment_url: null,
+        file_name: null,
+        status: "pending",
+        submitted_at: null,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assignment-submissions", assignmentId] });

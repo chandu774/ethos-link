@@ -21,45 +21,32 @@ src/
     useTasks.ts
     useNotifications.ts
   lib/
+    apiClient.ts
     collaboration.ts
 ```
 
-## Example Supabase queries
+## Example API Queries
 
 ```ts
-const { data: groups } = await supabase
-  .from("groups")
-  .select("*")
-  .eq("created_by", user.id)
-  .order("updated_at", { ascending: false });
+// Fetch groups
+const groups = await api.get<Group[]>("/chat/groups");
 ```
 
 ```ts
-const { data: messages } = await supabase
-  .from("group_messages")
-  .select("*, sender:profiles(id, name, username, avatar_url)")
-  .eq("group_id", groupId)
-  .order("created_at", { ascending: false })
-  .range(0, 19);
+// Fetch group messages
+const messages = await api.get<GroupMessage[]>(`/chat/groups/${groupId}/messages`);
 ```
 
 ```ts
-const { data: assignment } = await supabase
-  .from("assignments")
-  .insert({
-    group_id: groupId,
-    title: "Module 3 worksheet",
-    deadline: new Date().toISOString(),
-    created_by: user.id,
-  })
-  .select("*")
-  .single();
+// Create assignment
+const assignment = await api.post("/assignments", {
+  group_id: groupId,
+  title: "Module 3 worksheet",
+  deadline: new Date().toISOString(),
+});
 ```
 
 ```ts
-const { data: notifications } = await supabase
-  .from("notifications")
-  .select("*")
-  .eq("user_id", user.id)
-  .order("created_at", { ascending: false });
+// Fetch notifications
+const notifications = await api.get<Notification[]>("/notifications");
 ```

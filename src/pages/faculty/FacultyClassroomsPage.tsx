@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface AssignedClassroom {
   assignment_id: string;
@@ -57,93 +57,8 @@ export default function FacultyClassroomsPage() {
     setError(null);
 
     try {
-      // 1. Query authorized teaching assignments for this faculty
-      const { data: assignmentsData, error: assignErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          subject_name,
-          subject_code,
-          classroom_id,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey (
-            id,
-            name,
-            course,
-            branch,
-            year,
-            section,
-            academic_year
-          )
-        `)
-        .eq("faculty_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (assignErr) throw assignErr;
-
-      const rawAssignments = (assignmentsData as any[]) || [];
-      const classroomIds = [
-        ...new Set(rawAssignments.map((a) => a.classroom_id).filter(Boolean)),
-      ];
-
-      // 2. Concurrently fetch student enrollment count from classroom_members
-      let studentCounts: Record<string, number> = {};
-      let assignmentCounts: Record<string, number> = {};
-      let quizCounts: Record<string, number> = {};
-
-      if (classroomIds.length > 0) {
-        const [membersRes, asgRes, qzRes] = await Promise.all([
-          supabase
-            .from("classroom_members")
-            .select("classroom_id")
-            .in("classroom_id", classroomIds),
-          supabase
-            .from("assignments")
-            .select("classroom_id")
-            .in("classroom_id", classroomIds),
-          supabase
-            .from("quizzes")
-            .select("classroom_id")
-            .in("classroom_id", classroomIds),
-        ]);
-
-        (membersRes.data || []).forEach((m: any) => {
-          studentCounts[m.classroom_id] = (studentCounts[m.classroom_id] || 0) + 1;
-        });
-
-        (asgRes.data || []).forEach((a: any) => {
-          if (a.classroom_id) {
-            assignmentCounts[a.classroom_id] = (assignmentCounts[a.classroom_id] || 0) + 1;
-          }
-        });
-
-        (qzRes.data || []).forEach((q: any) => {
-          if (q.classroom_id) {
-            quizCounts[q.classroom_id] = (quizCounts[q.classroom_id] || 0) + 1;
-          }
-        });
-      }
-
-      // 3. Format assigned classrooms
-      const formatted: AssignedClassroom[] = rawAssignments
-        .filter((a) => a.classroom)
-        .map((a) => ({
-          assignment_id: a.id,
-          subject_name: a.subject_name || "Assigned Subject",
-          subject_code: a.subject_code || null,
-          classroom_id: a.classroom.id,
-          classroom_name: a.classroom.name || "Classroom",
-          course: a.classroom.course || "B.Tech",
-          branch: a.classroom.branch || "CSE",
-          year: a.classroom.year || 1,
-          section: a.classroom.section || "A",
-          academic_year: a.classroom.academic_year || "2026-27",
-          faculty_name: facultyName,
-          student_count: studentCounts[a.classroom.id] || 0,
-          assignment_count: assignmentCounts[a.classroom.id] || 0,
-          quiz_count: quizCounts[a.classroom.id] || 0,
-        }));
-
-      setClassrooms(formatted);
+      const data = await api.get<AssignedClassroom[]>("/classrooms/my-assigned");
+      setClassrooms(data || []);
     } catch (err: any) {
       console.error("Failed to load assigned classrooms:", err);
       setError("Unable to load your classrooms. Please try again.");

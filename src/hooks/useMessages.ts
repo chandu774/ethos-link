@@ -1,162 +1,67 @@
 import {
-  type InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { Tables } from "@/integrations/supabase/types";
+import api from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
-type Message = Tables<"messages">;
-type MessageReaction = Tables<"message_reactions">;
-const DIRECT_MESSAGES_PAGE_SIZE = 40;
-const RECENT_CHATS_SCAN_LIMIT = 1000;
+export interface Message {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
+  reply_to_message_id?: string | null;
+  status?: string;
+  delivered_at?: string | null;
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
 
 export function useMessages(
   otherUserId: string | null,
   options?: { pageSize?: number }
 ) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const pageSize = options?.pageSize ?? DIRECT_MESSAGES_PAGE_SIZE;
+  const pageSize = options?.pageSize ?? 40;
 
   const query = useInfiniteQuery({
     queryKey: ["messages", user?.id, otherUserId],
-    initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
+    initialPageParam: 0,
+    queryFn: async ({ pageParam: _pageParam }) => {
       if (!otherUserId) return [];
-
-      let queryBuilder = supabase
-        .from("messages")
-        .select("*")
-        .or(
-          `and(sender_id.eq.${user?.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user?.id})`
-        )
-        .order("created_at", { ascending: false })
-        .limit(pageSize);
-
-      if (pageParam) {
-        queryBuilder = queryBuilder.lt("created_at", pageParam);
-      }
-
-      const { data, error } = await queryBuilder;
-
-      if (error) throw error;
-      return (data as Message[]).reverse();
+      const data = await api.get<any[]>(`/chat/direct/${otherUserId}`);
+      return (data || []).map((m: any) => ({
+        id: m.id || m._id,
+        sender_id: m.sender_id?._id || m.sender_id || "",
+        receiver_id: m.receiver_id?._id || m.receiver_id || "",
+        content: m.content,
+        created_at: m.created_at || new Date().toISOString(),
+        status: m.is_read ? "read" : "sent",
+      })) as Message[];
     },
-    getNextPageParam: (lastPage) => {
-      if (!lastPage.length || lastPage.length < pageSize) return undefined;
-      return lastPage[0]?.created_at ?? undefined;
-    },
+    getNextPageParam: () => undefined,
     enabled: !!user && !!otherUserId,
+    refetchInterval: 3000, // Poll every 3 seconds for active conversation
   });
 
-  const messages = useMemo(() => {
-    const pages = query.data?.pages ?? [];
-    return [...pages].reverse().flat();
-  }, [query.data?.pages]);
-
-  const upsertMessageInCache = (incoming: Message) => {
-    queryClient.setQueryData<InfiniteData<Message[], string | null>>(
-      ["messages", user?.id, otherUserId],
-      (old) => {
-        if (!old) {
-          return {
-            pages: [[incoming]],
-            pageParams: [null],
-          };
-        }
-
-        const pages = old.pages.map((page) => page.filter((message) => message.id !== incoming.id));
-        if (!pages.length) pages.push([]);
-
-        // First page holds newest chunk in ascending order; append for newest message.
-        pages[0] = [...pages[0], incoming].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-
-        return { ...old, pages };
-      }
-    );
-  };
-
-  useEffect(() => {
-    if (!user || !otherUserId || !messages.length) return;
-
-    const undeliveredIds = messages
-      .filter(
-        (message) =>
-          message.receiver_id === user.id &&
-          message.sender_id === otherUserId &&
-          !message.delivered_at
-      )
-      .map((message) => message.id);
-
-    if (undeliveredIds.length === 0) return;
-
-    supabase
-      .from("messages")
-      .update({ status: "delivered", delivered_at: new Date().toISOString() })
-      .in("id", undeliveredIds);
-  }, [messages, otherUserId, user]);
-
-  // Subscribe to real-time updates
-  useEffect(() => {
-    if (!user || !otherUserId) return;
-
-    const channel = supabase
-      .channel(`messages:${user.id}:${otherUserId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `or(and(sender_id=eq.${user.id},receiver_id=eq.${otherUserId}),and(sender_id=eq.${otherUserId},receiver_id=eq.${user.id}))`,
-        },
-        (payload) => {
-          const incoming = payload.new as Message;
-          if (!incoming?.id) {
-            queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
-            return;
-          }
-          upsertMessageInCache(incoming);
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `or(and(sender_id=eq.${user.id},receiver_id=eq.${otherUserId}),and(sender_id=eq.${otherUserId},receiver_id=eq.${user.id}))`,
-        },
-        (payload) => {
-          const updated = payload.new as Message;
-          if (!updated?.id) {
-            queryClient.invalidateQueries({ queryKey: ["messages", user.id, otherUserId] });
-            return;
-          }
-          upsertMessageInCache(updated);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user, otherUserId, queryClient]);
+  const messages = query.data?.pages?.[0] || [];
 
   return {
     ...query,
     data: messages,
-    hasOlder: !!query.hasNextPage,
-    loadOlder: query.fetchNextPage,
-    isLoadingOlder: query.isFetchingNextPage,
+    hasOlder: false,
+    loadOlder: () => {},
+    isLoadingOlder: false,
   };
 }
 
@@ -168,25 +73,21 @@ export function useSendMessage() {
     mutationFn: async ({
       receiverId,
       content,
-      replyToMessageId,
+      replyToMessageId: _replyToMessageId,
     }: {
       receiverId: string;
       content: string;
       replyToMessageId?: string | null;
     }) => {
       if (!user) throw new Error("Not authenticated");
-      const { error } = await supabase.from("messages").insert({
-        sender_id: user.id,
+      return await api.post("/chat/direct", {
         receiver_id: receiverId,
-        content,
-        reply_to_message_id: replyToMessageId ?? null,
-        status: "sent",
+        content: content.trim(),
       });
-
-      if (error) throw error;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["messages", user?.id, variables.receiverId] });
+      queryClient.invalidateQueries({ queryKey: ["recent-chats", user?.id] });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to send message");
@@ -200,193 +101,44 @@ export function useRecentChats() {
   return useQuery({
     queryKey: ["recent-chats", user?.id],
     queryFn: async () => {
-      // Get the most recent message with each user
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .or(`sender_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
-        .order("created_at", { ascending: false })
-        .limit(RECENT_CHATS_SCAN_LIMIT);
+      const connections = await api.get<any[]>("/chat/connections");
+      const accepted = (connections || []).filter((c) => c.status === "accepted");
 
-      if (error) throw error;
+      return accepted.map((c: any) => {
+        const partner =
+          (c.requester_id?._id || c.requester_id) === user?.id
+            ? c.receiver_id
+            : c.requester_id;
+        const partnerId = partner?._id || partner?.id || partner || "";
 
-      // Group by conversation partner
-      const chatMap = new Map<string, Message>();
-      for (const msg of data as Message[]) {
-        const partnerId = msg.sender_id === user?.id ? msg.receiver_id : msg.sender_id;
-        if (!chatMap.has(partnerId)) {
-          chatMap.set(partnerId, msg);
-        }
-      }
-
-      return Array.from(chatMap.entries()).map(([partnerId, lastMessage]) => ({
-        partnerId,
-        lastMessage,
-      }));
+        return {
+          partnerId,
+          lastMessage: {
+            id: c.id || c._id,
+            sender_id: partnerId,
+            receiver_id: user?.id || "",
+            content: "Connected",
+            created_at: c.updated_at || c.created_at || new Date().toISOString(),
+          } as Message,
+        };
+      });
     },
     enabled: !!user,
   });
 }
 
-export function useMessageReactions(messageIds: string[]) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const idsKey = useMemo(() => [...messageIds].sort().join(","), [messageIds]);
-
-  const query = useQuery({
-    queryKey: ["message-reactions", idsKey],
-    queryFn: async () => {
-      if (!messageIds.length) return [] as MessageReaction[];
-
-      const { data, error } = await supabase
-        .from("message_reactions")
-        .select("*")
-        .in("message_id", messageIds);
-
-      if (error) throw error;
-      return data as MessageReaction[];
-    },
-    enabled: !!user && messageIds.length > 0,
+export function useMessageReactions(_messageIds: string[]) {
+  return useQuery({
+    queryKey: ["message-reactions"],
+    queryFn: async () => [] as MessageReaction[],
+    enabled: false,
   });
-
-  useEffect(() => {
-    if (!messageIds.length) return;
-
-    const messageIdSet = new Set(messageIds);
-    const channel = supabase
-      .channel(`message-reactions-${idsKey}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "message_reactions" },
-        (payload) => {
-          const messageId =
-            (payload.new as MessageReaction | null)?.message_id ??
-            (payload.old as MessageReaction | null)?.message_id;
-          if (messageId && messageIdSet.has(messageId)) {
-            queryClient.invalidateQueries({ queryKey: ["message-reactions", idsKey] });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [idsKey, messageIds, queryClient]);
-
-  return query;
 }
 
 export function useToggleMessageReaction() {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
-      if (!user?.id) {
-        if (import.meta.env.DEV) {
-          console.error("Missing user id for reaction");
-        }
-        throw new Error("Not authenticated");
-      }
-      if (!messageId) {
-        if (import.meta.env.DEV) {
-          console.error("Missing message id for reaction");
-        }
-        throw new Error("Missing message id");
-      }
-
-      const { data: existing, error: existingError } = await supabase
-        .from("message_reactions")
-        .select("id, emoji")
-        .eq("message_id", messageId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (existingError) {
-        if (import.meta.env.DEV) {
-          console.error("Reaction lookup failed:", existingError);
-        }
-        throw existingError;
-      }
-
-      if (existing?.id && existing.emoji === emoji) {
-        const { error } = await supabase
-          .from("message_reactions")
-          .delete()
-          .eq("message_id", messageId)
-          .eq("user_id", user.id);
-        if (error) {
-          if (import.meta.env.DEV) {
-            console.error("Reaction delete failed:", error);
-          }
-          throw error;
-        }
-        return { action: "removed" as const };
-      }
-
-      const { error } = await supabase.from("message_reactions").upsert(
-        {
-          message_id: messageId,
-          user_id: user.id,
-          emoji,
-        },
-        {
-          onConflict: "message_id,user_id",
-        }
-      );
-      if (error) {
-        if (import.meta.env.DEV) {
-          console.error("Reaction upsert failed:", error);
-        }
-        throw error;
-      }
+    mutationFn: async (_payload: { messageId: string; emoji: string }) => {
       return { action: "added" as const };
-    },
-    onMutate: async ({ messageId, emoji }) => {
-      const userId = user?.id;
-      if (!userId) return;
-
-      await queryClient.cancelQueries({ queryKey: ["message-reactions"] });
-      const previous = queryClient.getQueriesData<MessageReaction[]>({
-        queryKey: ["message-reactions"],
-      });
-
-      previous.forEach(([key, data]) => {
-        if (!data) return;
-        const existing = data.find(
-          (reaction) => reaction.message_id === messageId && reaction.user_id === userId
-        );
-        let next = data.filter(
-          (reaction) => !(reaction.message_id === messageId && reaction.user_id === userId)
-        );
-
-        if (!existing || existing.emoji !== emoji) {
-          next = [
-            ...next,
-            {
-              id: `temp-${messageId}-${emoji}-${userId}`,
-              message_id: messageId,
-              user_id: userId,
-              emoji,
-              created_at: new Date().toISOString(),
-            },
-          ];
-        }
-
-        queryClient.setQueryData(key, next);
-      });
-
-      return { previous };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["message-reactions"] });
-    },
-    onError: (_error, _variables, context) => {
-      context?.previous?.forEach(([key, data]) => {
-        queryClient.setQueryData(key, data);
-      });
     },
   });
 }

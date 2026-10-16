@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { Loader2, ArrowLeft, User, MessageCircle, NotebookTabs } from "lucide-react";
 import { formatUsername } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -28,16 +28,16 @@ export default function PublicProfile() {
     const loadProfile = async () => {
       if (!id) return;
       setLoading(true);
-      const { data, error } = await supabase
-        .from("profiles_public")
-        .select("id, name, username, bio, avatar_url")
-        .eq("id", id)
-        .single();
-
-      if (!error && data && isMounted) {
-        setProfile(data as PublicProfileData);
+      try {
+        const data = await api.get<PublicProfileData>(`/users/profile/${id}`);
+        if (data && isMounted) {
+          setProfile(data);
+        }
+      } catch (err) {
+        console.error("Failed to load user profile:", err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      if (isMounted) setLoading(false);
     };
 
     loadProfile();

@@ -35,7 +35,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface FacultyMember {
   id: string;
@@ -74,19 +74,8 @@ export default function AdminFacultyPage() {
   const fetchFaculty = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, name, email, faculty_id, department, designation, created_at")
-        .eq("role", "faculty")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      
-      if (data) {
-        setFacultyList(data as FacultyMember[]);
-      } else {
-        setFacultyList([]);
-      }
+      const data = await api.get<FacultyMember[]>("/users/faculty");
+      setFacultyList(data || []);
     } catch (err: any) {
       console.error("Failed to load faculty:", err);
       toast.error("Failed to load faculty roster");
@@ -109,24 +98,20 @@ export default function AdminFacultyPage() {
     setCreateLoading(true);
     try {
       const cleanFacultyId = formFacultyId.trim().toUpperCase();
-      const { data, error } = await supabase.rpc("admin_create_faculty", {
-        p_name: formName.trim(),
-        p_faculty_id: cleanFacultyId,
-        p_department: formDepartment,
-        p_designation: formDesignation,
-        p_password: formPassword,
-        p_email: formEmail.trim() ? formEmail.trim() : null,
+      const created = await api.post<any>("/users", {
+        name: formName.trim(),
+        faculty_id: cleanFacultyId,
+        department: formDepartment,
+        designation: formDesignation,
+        password: formPassword,
+        email: formEmail.trim() || undefined,
+        role: "faculty",
       });
-
-      if (error) {
-        toast.error("Failed to create faculty: " + error.message);
-        return;
-      }
 
       toast.success(`Faculty account created for ${formName}!`);
       setCreatedCredentials({
         name: formName,
-        email: formEmail.trim() || `${cleanFacultyId.toLowerCase()}@faculty.synapse.local`,
+        email: created.email || formEmail.trim() || `${cleanFacultyId.toLowerCase()}@synapse.edu`,
         faculty_id: cleanFacultyId,
         password: formPassword,
       });
@@ -141,7 +126,7 @@ export default function AdminFacultyPage() {
       // Refresh roster
       fetchFaculty();
     } catch (err: any) {
-      toast.error("Unexpected error: " + err.message);
+      toast.error("Failed to create faculty: " + (err.message || "Unknown error"));
     } finally {
       setCreateLoading(false);
     }

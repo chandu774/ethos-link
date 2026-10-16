@@ -31,7 +31,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface TeachingCohort {
@@ -76,31 +76,8 @@ export default function FacultyDashboardPage() {
 
     try {
       // 1. Fetch teaching assignments for this faculty
-      const { data: taData, error: taErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          faculty_id,
-          classroom_id,
-          subject_name,
-          subject_code,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey(
-            id,
-            name,
-            course,
-            branch,
-            year,
-            section,
-            academic_year
-          )
-        `)
-        .eq("faculty_id", user.id);
-
-      if (taErr) throw taErr;
-
-      const cohorts = (taData as any[]) || [];
-
-      if (cohorts.length === 0) {
+      const cohorts = await api.get<any[]>("/classrooms/my-assigned");
+      if (!cohorts || cohorts.length === 0) {
         setTeachingAssignments([]);
         setTotalStudentsCount(0);
         setTotalAssignmentsCount(0);
@@ -109,77 +86,42 @@ export default function FacultyDashboardPage() {
         return;
       }
 
-      const classroomIds = Array.from(new Set(cohorts.map((c) => c.classroom_id).filter(Boolean)));
-      const teachingIds = cohorts.map((c) => c.id);
+      // 2. Fetch assignments, quizzes, and students concurrently
+      const [asgData, qzData, studentList] = await Promise.all([
+        api.get<any[]>("/assignments").catch(() => []),
+        api.get<any[]>("/quizzes").catch(() => []),
+        api.get<any[]>("/users/students").catch(() => []),
+      ]);
 
-      // 2. Fetch student membership counts per classroom
-      let studentCountMap: Record<string, number> = {};
-      let allUniqueStudentIds = new Set<string>();
+      const asgs = asgData || [];
+      const qzs = qzData || [];
+      const students = studentList || [];
 
-      if (classroomIds.length > 0) {
-        const { data: membersData } = await supabase
-          .from("classroom_members")
-          .select("classroom_id, student_id")
-          .in("classroom_id", classroomIds);
+      // Counts per cohort
+      const enrichedCohorts: TeachingCohort[] = cohorts.map((c) => {
+        const clsId = c.classroom_id || c.classroom?.id || c.classroom?._id;
+        const matchingStudents = students.filter(
+          (s: any) => s.classroom?._id === clsId || s.classroom?.id === clsId || s.classroom_id === clsId
+        );
+        const matchingAsgs = asgs.filter(
+          (a: any) => a.teaching_assignment_id === c.id || a.teaching_assignment_id?._id === c.id || a.classroom_id === clsId
+        );
+        const matchingQzs = qzs.filter(
+          (q: any) => q.teaching_assignment_id === c.id || q.teaching_assignment_id?._id === c.id || q.classroom_id === clsId
+        );
 
-        if (membersData) {
-          membersData.forEach((m) => {
-            studentCountMap[m.classroom_id] = (studentCountMap[m.classroom_id] || 0) + 1;
-            allUniqueStudentIds.add(m.student_id);
-          });
-        }
-      }
-
-      // 3. Fetch assignments counts
-      let asgCountMap: Record<string, number> = {};
-      let totalAsgs = 0;
-      if (teachingIds.length > 0) {
-        const { data: asgData } = await supabase
-          .from("assignments")
-          .select("id, teaching_assignment_id")
-          .in("teaching_assignment_id", teachingIds);
-
-        if (asgData) {
-          totalAsgs = asgData.length;
-          asgData.forEach((a) => {
-            if (a.teaching_assignment_id) {
-              asgCountMap[a.teaching_assignment_id] = (asgCountMap[a.teaching_assignment_id] || 0) + 1;
-            }
-          });
-        }
-      }
-
-      // 4. Fetch quizzes counts
-      let quizCountMap: Record<string, number> = {};
-      let totalQzs = 0;
-      if (teachingIds.length > 0) {
-        const { data: qzData } = await supabase
-          .from("quizzes")
-          .select("id, teaching_assignment_id")
-          .in("teaching_assignment_id", teachingIds);
-
-        if (qzData) {
-          totalQzs = qzData.length;
-          qzData.forEach((q) => {
-            if (q.teaching_assignment_id) {
-              quizCountMap[q.teaching_assignment_id] = (quizCountMap[q.teaching_assignment_id] || 0) + 1;
-            }
-          });
-        }
-      }
-
-      // Enrich cohorts
-      const enrichedCohorts: TeachingCohort[] = cohorts.map((c) => ({
-        ...c,
-        student_count: studentCountMap[c.classroom_id] || 0,
-        assignment_count: asgCountMap[c.id] || 0,
-        quiz_count: quizCountMap[c.id] || 0,
-      }));
+        return {
+          ...c,
+          student_count: matchingStudents.length,
+          assignment_count: matchingAsgs.length,
+          quiz_count: matchingQzs.length,
+        };
+      });
 
       setTeachingAssignments(enrichedCohorts);
-      setTotalStudentsCount(allUniqueStudentIds.size);
-      setTotalAssignmentsCount(totalAsgs);
-      setTotalQuizzesCount(totalQzs);
+      setTotalStudentsCount(students.length);
+      setTotalAssignmentsCount(asgs.length);
+      setTotalQuizzesCount(qzs.length);
     } catch (err: any) {
       console.error("Failed to fetch faculty dashboard data:", err);
       toast.error("Failed to load teaching assignments");

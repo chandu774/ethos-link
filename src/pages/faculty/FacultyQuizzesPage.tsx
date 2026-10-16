@@ -41,7 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 import { generateAndValidateQuiz, getTopicBoundary } from "@/services/quizGenerationService";
 
@@ -152,83 +152,26 @@ export default function FacultyQuizzesPage() {
 
     try {
       // 1. Fetch teaching assignments
-      const { data: taData, error: taErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          subject_name,
-          subject_code,
-          classroom_id,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey (
-            name,
-            course,
-            branch,
-            year,
-            section
-          )
-        `)
-        .eq("faculty_id", user.id);
-
-      if (taErr) throw taErr;
-
-      const cohorts = (taData as any[]) || [];
-      setTeachingCohorts(cohorts);
-      if (cohorts.length > 0 && !selectedCohortId) {
+      const cohorts = await api.get<TeachingCohort[]>("/classrooms/my-assigned");
+      setTeachingCohorts(cohorts || []);
+      if (cohorts && cohorts.length > 0 && !selectedCohortId) {
         setSelectedCohortId(cohorts[0].id);
       }
 
-      const teachingIds = cohorts.map((c) => c.id);
+      // 2. Fetch quizzes created by this faculty
+      const rawQuizzes = await api.get<any[]>("/quizzes");
 
-      // 2. Fetch quizzes created by this faculty or for their teaching assignments
-      let query = supabase
-        .from("quizzes")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (teachingIds.length > 0) {
-        query = query.or(`created_by.eq.${user.id},teaching_assignment_id.in.(${teachingIds.join(",")})`);
-      } else {
-        query = query.eq("created_by", user.id);
-      }
-
-      const { data: quizData, error: qzErr } = await query;
-      if (qzErr) throw qzErr;
-
-      const rawQuizzes = quizData || [];
-
-      // 3. For each quiz, fetch question count and attempt stats
-      const enriched: RealQuiz[] = [];
-      for (const q of rawQuizzes) {
-        const cohort = cohorts.find((c) => c.id === q.teaching_assignment_id);
-
-        const { count: qCount } = await supabase
-          .from("quiz_questions")
-          .select("id", { count: "exact", head: true })
-          .eq("quiz_id", q.id);
-
-        const { data: attempts } = await supabase
-          .from("quiz_attempts")
-          .select("score, max_score")
-          .eq("quiz_id", q.id);
-
-        let avg = 0;
-        if (attempts && attempts.length > 0) {
-          const totalPct = attempts.reduce((sum, att) => {
-            const max = att.max_score || 100;
-            return sum + ((att.score || 0) / max) * 100;
-          }, 0);
-          avg = Math.round(totalPct / attempts.length);
-        }
-
-        enriched.push({
+      const enriched: RealQuiz[] = (rawQuizzes || []).map((q: any) => {
+        const cohort = (cohorts || []).find((c) => c.id === (q.teaching_assignment_id?.id || q.teaching_assignment_id));
+        return {
           ...q,
           status: q.status || "PUBLISHED",
-          questions_count: qCount || 0,
-          attempts_count: attempts?.length || 0,
-          avg_score: avg,
+          questions_count: q.questions_count ?? q.question_count ?? 0,
+          attempts_count: q.attempts_count ?? 0,
+          avg_score: q.avg_score ?? 0,
           cohort_name: cohort ? `${cohort.subject_name} · ${cohort.classroom?.name}` : (q.subject || "Classroom Quiz"),
-        });
-      }
+        };
+      });
 
       setQuizzes(enriched);
     } catch (err: any) {
@@ -304,40 +247,26 @@ export default function FacultyQuizzesPage() {
 
     setManualSaving(true);
     try {
-      // 1. Insert quiz
-      const { data: createdQuiz, error: qzErr } = await supabase
-        .from("quizzes")
-        .insert({
-          title: quizTitle.trim(),
-          description: quizDesc.trim() || null,
-          topic: quizTopic.trim(),
-          subject: cohort.subject_name,
-          difficulty: "Medium",
-          status: status,
-          duration_minutes: Number(quizDuration) || 15,
-          max_attempts: Number(quizMaxAttempts) || 1,
-          teaching_assignment_id: cohort.id,
-          classroom_id: cohort.classroom_id,
-          created_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (qzErr) throw qzErr;
-
-      // 2. Insert questions with topic and concept
-      const toInsert = questions.map((q) => ({
-        quiz_id: createdQuiz.id,
-        question: q.question,
-        options: q.options,
-        correct_option_index: q.correct_option_index,
-        topic: q.topic,
-        concept: q.concept,
-        marks: q.marks,
-      }));
-
-      const { error: qErr } = await supabase.from("quiz_questions").insert(toInsert);
-      if (qErr) throw qErr;
+      await api.post("/quizzes", {
+        title: quizTitle.trim(),
+        description: quizDesc.trim() || null,
+        topic: quizTopic.trim(),
+        subject: cohort.subject_name,
+        difficulty: "Medium",
+        status: status,
+        duration_minutes: Number(quizDuration) || 15,
+        max_attempts: Number(quizMaxAttempts) || 1,
+        teaching_assignment_id: cohort.id,
+        classroom_id: cohort.classroom_id,
+        questions: questions.map((q) => ({
+          question: q.question,
+          options: q.options,
+          correct_option_index: q.correct_option_index,
+          topic: q.topic,
+          concept: q.concept,
+          marks: q.marks,
+        })),
+      });
 
       toast.success(
         status === "PUBLISHED"
@@ -450,40 +379,28 @@ export default function FacultyQuizzesPage() {
     setAiPublishing(true);
     try {
       const title = aiQuizTitle.trim() || `AI Diagnostic: ${aiTopic.trim()}`;
-      const { data: createdQuiz, error: qzErr } = await supabase
-        .from("quizzes")
-        .insert({
-          title: title,
-          description: `Diagnostic assessment generated with Synapse AI covering: ${aiConcepts || aiTopic}`,
-          topic: aiTopic.trim(),
-          subject: cohort.subject_name,
-          difficulty: aiDifficulty,
-          status: status,
-          duration_minutes: Number(aiDuration) || 15,
-          max_attempts: 1,
-          teaching_assignment_id: cohort.id,
-          classroom_id: cohort.classroom_id,
-          created_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (qzErr) throw qzErr;
-
-      const toInsert = aiGeneratedQuestions.map((q) => ({
-        quiz_id: createdQuiz.id,
-        question: q.question,
-        options: q.options,
-        correct_option_index: q.correct_option_index,
-        topic: q.topic || aiTopic.trim(),
-        concept: q.concept,
-        marks: q.marks,
-        difficulty: q.difficulty || aiDifficulty,
-        explanation: q.explanation || null,
-      }));
-
-      const { error: qErr } = await supabase.from("quiz_questions").insert(toInsert);
-      if (qErr) throw qErr;
+      await api.post("/quizzes", {
+        title: title,
+        description: `Diagnostic assessment generated with Synapse AI covering: ${aiConcepts || aiTopic}`,
+        topic: aiTopic.trim(),
+        subject: cohort.subject_name,
+        difficulty: aiDifficulty,
+        status: status,
+        duration_minutes: Number(aiDuration) || 15,
+        max_attempts: 1,
+        teaching_assignment_id: cohort.id,
+        classroom_id: cohort.classroom_id,
+        questions: aiGeneratedQuestions.map((q) => ({
+          question: q.question,
+          options: q.options,
+          correct_option_index: q.correct_option_index,
+          topic: q.topic || aiTopic.trim(),
+          concept: q.concept,
+          marks: q.marks,
+          difficulty: q.difficulty || aiDifficulty,
+          explanation: q.explanation || null,
+        })),
+      });
 
       toast.success(
         status === "PUBLISHED"
@@ -508,12 +425,7 @@ export default function FacultyQuizzesPage() {
   // Toggle quiz status (Publish draft or Close quiz)
   const handleUpdateQuizStatus = async (quizId: string, newStatus: "PUBLISHED" | "CLOSED") => {
     try {
-      const { error } = await supabase
-        .from("quizzes")
-        .update({ status: newStatus })
-        .eq("id", quizId);
-
-      if (error) throw error;
+      await api.patch(`/quizzes/${quizId}/status`, { status: newStatus });
       toast.success(`Quiz status updated to ${newStatus}`);
       fetchQuizzesAndCohorts();
     } catch (err: any) {
@@ -525,8 +437,7 @@ export default function FacultyQuizzesPage() {
   const handleDeleteQuiz = async (quizId: string, title: string) => {
     if (!confirm(`Delete quiz "${title}"? This cannot be undone.`)) return;
     try {
-      const { error } = await supabase.from("quizzes").delete().eq("id", quizId);
-      if (error) throw error;
+      await api.delete(`/quizzes/${quizId}`);
       toast.success(`Deleted quiz "${title}"`);
       fetchQuizzesAndCohorts();
     } catch (err: any) {
@@ -541,42 +452,17 @@ export default function FacultyQuizzesPage() {
     setPerfLoading(true);
 
     try {
-      // 1. Fetch questions for this quiz with deterministic ordering
-      const { data: qData } = await supabase
-        .from("quiz_questions")
-        .select("*")
-        .eq("quiz_id", quiz.id)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
+      const perfData = await api.get<{
+        quiz: any;
+        questions: any[];
+        attempts: any[];
+        attemptAnswers: any[];
+      }>(`/quizzes/${quiz.id}/performance`);
 
-      const qs = qData || [];
-
-      // 2. Fetch attempts for this quiz
-      const { data: attData } = await supabase
-        .from("quiz_attempts")
-        .select(`
-          id,
-          user_id,
-          score,
-          max_score,
-          percentage,
-          answers,
-          completed_at,
-          user:profiles!quiz_attempts_user_id_fkey(id, name, roll_number)
-        `)
-        .eq("quiz_id", quiz.id)
-        .order("completed_at", { ascending: false });
-
-      const atts = attData || [];
+      const qs = perfData.questions || [];
+      const atts = perfData.attempts || [];
       setAttemptsList(atts);
-
-      // 3. Fetch granular answers from quiz_attempt_answers for authoritative option distribution
-      const { data: qAnsData } = await supabase
-        .from("quiz_attempt_answers")
-        .select("id, attempt_id, student_id, question_id, selected_option, correct_option, is_correct, marks_awarded")
-        .eq("quiz_id", quiz.id);
-
-      const attemptAnswers = qAnsData || [];
+      const attemptAnswers = perfData.attemptAnswers || [];
 
       // 4. Calculate question-level performance and option distribution
       const optKeys = ["A", "B", "C", "D"] as const;

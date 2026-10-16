@@ -36,7 +36,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface TeachingAssignmentItem {
   id: string;
@@ -92,38 +92,15 @@ export default function AdminTeachingAssignmentsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch teaching assignments joined with faculty profile and classroom
-      const { data: assignData, error: assignError } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          faculty_id,
-          classroom_id,
-          subject_name,
-          subject_code,
-          created_at,
-          faculty:profiles!teaching_assignments_faculty_id_fkey(name, faculty_id, department, designation),
-          classroom:classrooms!teaching_assignments_classroom_id_fkey(name, course, branch, section)
-        `)
-        .order("created_at", { ascending: false });
+      const [assignData, facData, classData] = await Promise.all([
+        api.get<TeachingAssignmentItem[]>("/classrooms/teaching-assignments/all"),
+        api.get<FacultyOption[]>("/users/faculty"),
+        api.get<ClassroomOption[]>("/classrooms"),
+      ]);
 
-      if (assignError) throw assignError;
-      setAssignments((assignData || []) as any[]);
-
-      // 2. Fetch faculty options
-      const { data: facData } = await supabase
-        .from("profiles")
-        .select("id, name, faculty_id, department")
-        .eq("role", "faculty")
-        .order("name", { ascending: true });
-      setFacultyList((facData || []) as any[]);
-
-      // 3. Fetch classroom options
-      const { data: classData } = await supabase
-        .from("classrooms")
-        .select("id, name, course, branch, section")
-        .order("name", { ascending: true });
-      setClassroomList((classData || []) as any[]);
+      setAssignments(assignData || []);
+      setFacultyList(facData || []);
+      setClassroomList(classData || []);
     } catch (err: any) {
       console.error("Failed to load teaching assignments:", err);
       toast.error("Failed to load teaching assignments: " + (err.message || "Unknown error"));
@@ -146,19 +123,12 @@ export default function AdminTeachingAssignmentsPage() {
     setAssignLoading(true);
     try {
       const cleanCode = subjectCode.trim().toUpperCase();
-      const { error } = await supabase.from("teaching_assignments").insert({
+      await api.post("/classrooms/teaching-assignments", {
         faculty_id: selectedFacultyId,
         classroom_id: selectedClassroomId,
         subject_name: subjectName.trim(),
         subject_code: cleanCode,
       });
-
-      if (error) {
-        if (error.code === "23505") {
-          throw new Error("This faculty member is already assigned to this subject code in this classroom.");
-        }
-        throw error;
-      }
 
       toast.success(`Assigned ${subjectName} to teacher successfully!`);
       setSubjectName("");
@@ -180,8 +150,7 @@ export default function AdminTeachingAssignmentsPage() {
     }
 
     try {
-      const { error } = await supabase.from("teaching_assignments").delete().eq("id", id);
-      if (error) throw error;
+      await api.delete(`/classrooms/teaching-assignments/${id}`);
       toast.success("Teaching assignment removed.");
       fetchData();
     } catch (err: any) {

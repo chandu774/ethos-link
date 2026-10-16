@@ -43,7 +43,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 export default function FacultyTeachingDetailPage() {
@@ -83,71 +83,18 @@ export default function FacultyTeachingDetailPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch teaching assignment - strictly authorized to current faculty
-      const { data: ta, error: taErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          faculty_id,
-          classroom_id,
-          subject_name,
-          subject_code,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey(id, name, course, branch, year, section, academic_year)
-        `)
-        .eq("id", assignmentId)
-        .eq("faculty_id", user.id)
-        .single();
-
-      if (taErr || !ta) {
+      const data = await api.get<any>(`/classrooms/teaching-assignments/${assignmentId}`);
+      if (!data?.teaching_assignment) {
         toast.error("You are not authorized to view this teaching assignment, or it does not exist.");
         navigate("/faculty/dashboard");
         return;
       }
-      setTeachingAssignment(ta);
 
-      // 2. Fetch students enrolled in this classroom
-      const { data: memberData } = await supabase
-        .from("classroom_members")
-        .select(`
-          student_id,
-          role,
-          student:profiles!classroom_members_student_id_fkey(id, name, roll_number, course, branch, year, section, email)
-        `)
-        .eq("classroom_id", ta.classroom_id);
-
-      const studentList = (memberData || []).map((m: any) => m.student).filter(Boolean);
-      setStudents(studentList);
-
-      // 3. Fetch quizzes for this teaching assignment
-      const { data: quizData } = await supabase
-        .from("quizzes")
-        .select("id, title, topic, difficulty, created_at")
-        .eq("teaching_assignment_id", assignmentId)
-        .order("created_at", { ascending: false });
-      setQuizzes(quizData || []);
-
-      // 4. Fetch assignments for this teaching assignment
-      const { data: asgData } = await supabase
-        .from("assignments")
-        .select(`
-          id, title, topic, deadline, max_marks, estimated_effort, attachment_url, attachment_name, created_at,
-          submissions:assignment_submissions(id, user_id, marks_obtained, status, submitted_at, attachment_url, attachment_name, submission_text)
-        `)
-        .eq("teaching_assignment_id", assignmentId)
-        .order("created_at", { ascending: false });
-      setAssignments(asgData || []);
-
-      // 5. Fetch quiz attempts for these quizzes
-      if (quizData && quizData.length > 0) {
-        const quizIds = quizData.map((q) => q.id);
-        const { data: attempts } = await supabase
-          .from("quiz_attempts")
-          .select("id, user_id, quiz_id, score, max_score, completed_at")
-          .in("quiz_id", quizIds);
-        setQuizAttempts(attempts || []);
-      } else {
-        setQuizAttempts([]);
-      }
+      setTeachingAssignment(data.teaching_assignment);
+      setStudents(data.students || []);
+      setQuizzes(data.quizzes || []);
+      setAssignments(data.assignments || []);
+      setQuizAttempts(data.quiz_attempts || []);
     } catch (err: any) {
       console.error("Failed to load teaching assignment data:", err);
       toast.error("Failed to load classroom details.");
@@ -167,30 +114,22 @@ export default function FacultyTeachingDetailPage() {
 
     setQuizLoading(true);
     try {
-      const { data: newQuiz, error } = await supabase
-        .from("quizzes")
-        .insert({
-          title: quizTitle.trim(),
-          topic: quizTopic.trim() || teachingAssignment.subject_name,
-          difficulty: quizDifficulty,
-          subject: teachingAssignment.subject_name,
-          teaching_assignment_id: teachingAssignment.id,
-          classroom_id: teachingAssignment.classroom_id,
-          created_by: user.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Add a default sample question
-      await supabase.from("quiz_questions").insert({
-        quiz_id: newQuiz.id,
-        question: `What is the core principle of ${quizTopic.trim() || teachingAssignment.subject_name}?`,
-        options: ["Data Integrity & Isolation", "Redundant Storage", "Unindexed Tables", "Unchecked Updates"],
-        correct_option_index: 0,
-        explanation: "Maintains ACID properties and schema consistency.",
+      await api.post("/quizzes", {
+        title: quizTitle.trim(),
         topic: quizTopic.trim() || teachingAssignment.subject_name,
+        difficulty: quizDifficulty,
+        subject: teachingAssignment.subject_name,
+        teaching_assignment_id: teachingAssignment.id,
+        classroom_id: teachingAssignment.classroom_id,
+        questions: [
+          {
+            question: `What is the core principle of ${quizTopic.trim() || teachingAssignment.subject_name}?`,
+            options: ["Data Integrity & Isolation", "Redundant Storage", "Unindexed Tables", "Unchecked Updates"],
+            correct_option_index: 0,
+            explanation: "Maintains ACID properties and schema consistency.",
+            topic: quizTopic.trim() || teachingAssignment.subject_name,
+          },
+        ],
       });
 
       toast.success(`Quiz "${quizTitle}" created for ${teachingAssignment.classroom.name}!`);
@@ -217,23 +156,13 @@ export default function FacultyTeachingDetailPage() {
 
       if (asgFile) {
         attachmentName = asgFile.name;
-        const fileExt = asgFile.name.split(".").pop();
-        const filePath = `${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("assignment-files")
-          .upload(filePath, asgFile, { contentType: "application/pdf" });
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage
-          .from("assignment-files")
-          .getPublicUrl(filePath);
-
-        attachmentUrl = publicUrlData.publicUrl;
+        const formData = new FormData();
+        formData.append("file", asgFile);
+        const uploadRes = await api.upload<any>("/storage/upload", formData);
+        attachmentUrl = uploadRes.fileUrl || uploadRes.publicUrl;
       }
 
-      const { error: insertError } = await supabase.from("assignments").insert({
+      await api.post("/assignments", {
         title: asgTitle.trim(),
         description: asgDesc.trim() || null,
         topic: asgTopic.trim() || teachingAssignment.subject_name,
@@ -241,12 +170,9 @@ export default function FacultyTeachingDetailPage() {
         max_marks: parseFloat(asgMaxMarks) || 20,
         teaching_assignment_id: teachingAssignment.id,
         classroom_id: teachingAssignment.classroom_id,
-        created_by: user.id,
         attachment_url: attachmentUrl,
         attachment_name: attachmentName,
       });
-
-      if (insertError) throw insertError;
 
       toast.success(`Assignment "${asgTitle}" posted for ${teachingAssignment.classroom.name}!`);
       setAsgTitle("");

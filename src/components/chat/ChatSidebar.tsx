@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,15 +47,12 @@ export function ChatSidebar({
   const { data: conversations, isLoading } = useQuery({
     queryKey: ["ai-conversations", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("ai_conversations")
-        .select("*")
-        .eq("user_id", user!.id)
-        .order("updated_at", { ascending: false });
-
-      if (error) throw error;
-      return data.map((conv) => ({
-        ...conv,
+      const data = await api.get<any[]>("/ai/conversations");
+      return (data || []).map((conv: any) => ({
+        id: conv.id || conv._id,
+        created_at: conv.created_at,
+        updated_at: conv.updated_at,
+        summary: conv.summary || null,
         messages: (conv.messages as unknown as Message[]) || [],
       })) as Conversation[];
     },
@@ -67,7 +64,7 @@ export function ChatSidebar({
     setDeletingId(id);
     
     try {
-      await supabase.from("ai_conversations").delete().eq("id", id);
+      await api.delete(`/ai/conversations/${id}`);
       queryClient.invalidateQueries({ queryKey: ["ai-conversations"] });
       
       if (currentConversationId === id) {

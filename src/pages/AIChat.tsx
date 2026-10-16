@@ -6,15 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Brain, Info, Send, Sparkles, Loader2, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useQueryClient } from "@tanstack/react-query";
-import { Json } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { useAIConversations, useCurrentConversation, Message } from "@/hooks/useAIConversations";
-
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 // Deprecated: AI tools are now embedded in class groups (Chat page).
 export default function AIChat() {
@@ -98,144 +95,41 @@ export default function AIChat() {
       }
     }
 
-    // Update DB with user message
-    await supabase
-      .from("ai_conversations")
-      .update({ 
-        messages: messagesWithUser as unknown as Json,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", convId);
-
     setIsStreaming(true);
     setStreamingContent("");
 
     try {
       // Prepare messages for AI (only recent messages for context, limit to last 20)
       const recentMessages = messagesWithUser.slice(-20);
-      const apiMessages = recentMessages.map(m => ({ 
-        role: m.role, 
-        content: m.content 
+      const apiMessages = recentMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
       }));
 
-      const resp = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ messages: apiMessages }),
+      const res = await api.post<{ reply: string }>("/ai/chat", {
+        messages: apiMessages,
+        conversationId: convId,
       });
 
-      if (!resp.ok) {
-        const errorData = await resp.json().catch(() => ({}));
-        
-        if (resp.status === 429) {
-          toast({
-            title: "Rate limit exceeded",
-            description: "Please wait a moment and try again.",
-            variant: "destructive",
-          });
-          throw new Error("Rate limited");
-        }
-        
-        if (resp.status === 402) {
-          toast({
-            title: "Credits exhausted", 
-            description: "Please add credits to continue using AI chat.",
-            variant: "destructive",
-          });
-          throw new Error("Payment required");
-        }
-        
-        throw new Error(errorData.error || "Failed to get response");
+      const replyText = res?.reply || "I'm here to help!";
+
+      // Progressive reveal animation for natural assistant conversation feel
+      const step = Math.max(1, Math.floor(replyText.length / 25));
+      for (let i = 1; i <= replyText.length; i += step) {
+        setStreamingContent(replyText.slice(0, i));
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
-
-      const reader = resp.body!.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
-      let assistantContent = "";
-      let streamDone = false;
-
-      while (!streamDone) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") {
-            streamDone = true;
-            break;
-          }
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setStreamingContent(assistantContent);
-            }
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
-      }
-
-      // Final buffer flush
-      if (textBuffer.trim()) {
-        for (let raw of textBuffer.split("\n")) {
-          if (!raw) continue;
-          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
-          if (raw.startsWith(":") || raw.trim() === "") continue;
-          if (!raw.startsWith("data: ")) continue;
-          const jsonStr = raw.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setStreamingContent(assistantContent);
-            }
-          } catch { /* ignore partial */ }
-        }
-      }
+      setStreamingContent(replyText);
 
       // Save complete assistant message
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: assistantContent,
+        content: replyText,
       };
 
       const finalMessages = [...messagesWithUser, assistantMessage];
       setLocalMessages(finalMessages);
-
-      // Generate summary from first user message
-      const firstUserMsg = finalMessages.find(m => m.role === "user");
-      const summary = firstUserMsg 
-        ? firstUserMsg.content.slice(0, 50) + (firstUserMsg.content.length > 50 ? "..." : "")
-        : null;
-      
-      await supabase
-        .from("ai_conversations")
-        .update({ 
-          messages: finalMessages as unknown as Json,
-          summary,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", convId);
 
       queryClient.invalidateQueries({ queryKey: ["ai-conversations"] });
 
@@ -243,16 +137,13 @@ export default function AIChat() {
       if (profile) {
         await analyzeMindset(userContent);
       }
-
     } catch (error) {
       console.error("Chat error:", error);
-      if (!(error instanceof Error && (error.message === "Rate limited" || error.message === "Payment required"))) {
-        toast({
-          title: "Error",
-          description: "Failed to get response. Please try again.",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Error",
+        description: "Failed to get response. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsStreaming(false);
       setStreamingContent("");
@@ -297,12 +188,12 @@ export default function AIChat() {
       adjustments.collaborative += 2;
     }
 
-    const hasAdjustments = Object.values(adjustments).some(v => v !== 0);
-    
+    const hasAdjustments = Object.values(adjustments).some((v) => v !== 0);
+
     if (hasAdjustments && profile) {
-      const currentTraits = profile.mindset_traits as Record<string, number> || {};
+      const currentTraits = (profile.mindset_traits as Record<string, number>) || {};
       const newTraits = { ...currentTraits };
-      
+
       Object.entries(adjustments).forEach(([trait, adjustment]) => {
         if (adjustment !== 0) {
           const currentValue = newTraits[trait] || 50;
@@ -310,10 +201,7 @@ export default function AIChat() {
         }
       });
 
-      await supabase
-        .from("profiles")
-        .update({ mindset_traits: newTraits })
-        .eq("id", user!.id);
+      await api.patch("/auth/profile", { mindset_traits: newTraits });
 
       refreshProfile();
       queryClient.invalidateQueries({ queryKey: ["profiles", "with-similarity"] });

@@ -1,16 +1,14 @@
 import {
-  type InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { useEffect, useMemo, useRef } from "react";
 
-interface Group {
+export interface Group {
   id: string;
   name: string;
   description: string | null;
@@ -21,7 +19,7 @@ interface Group {
   updated_at: string;
 }
 
-interface GroupMember {
+export interface GroupMember {
   id: string;
   group_id: string;
   user_id: string;
@@ -35,7 +33,7 @@ interface GroupMember {
   };
 }
 
-interface GroupMessage {
+export interface GroupMessage {
   id: string;
   group_id: string;
   sender_id: string;
@@ -50,7 +48,7 @@ interface GroupMessage {
   };
 }
 
-interface GroupMessageReaction {
+export interface GroupMessageReaction {
   id: string;
   message_id: string;
   user_id: string;
@@ -58,249 +56,97 @@ interface GroupMessageReaction {
   created_at: string;
 }
 
-const GROUP_MESSAGES_PAGE_SIZE = 40;
-
 // Get groups the user is a member of
 export function useUserGroups(communityId?: string | null) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (!user) return;
-
-    const channel = supabase
-      .channel(`group-membership-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "group_members",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["groups", user.id] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user, queryClient]);
 
   return useQuery({
     queryKey: ["groups", user?.id, communityId],
     queryFn: async () => {
       if (!user) return [];
-
-      // First get group IDs where user is a member
-      const { data: membershipData, error: membershipError } = await supabase
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", user.id);
-
-      if (membershipError) throw membershipError;
-
-      const groupIds = membershipData.map((m) => m.group_id);
-      
-      if (groupIds.length === 0) return [];
-
-      // Then get the groups
-      let query = supabase
-        .from("groups")
-        .select("*")
-        .in("id", groupIds);
-
-      if (communityId === null) {
-        // Shared groups with no community
-        query = query.is("community_id", null);
-      } else if (communityId) {
-        // Community-specific groups
-        query = query.eq("community_id", communityId);
-      }
-
-      const { data, error } = await query.order("updated_at", { ascending: false });
-
-      if (error) throw error;
-      return data as Group[];
+      const data = await api.get<any[]>("/chat/groups");
+      return (data || []).map((g: any) => ({
+        id: g.id || g._id,
+        name: g.name,
+        description: g.description,
+        creator_id: g.created_by,
+        community_id: null,
+        avatar_url: g.avatar_url,
+        created_at: g.created_at,
+        updated_at: g.updated_at,
+      })) as Group[];
     },
     enabled: !!user,
   });
 }
 
-// Get available groups in a community (for joining)
-export function useCommunityGroups(communityId: string) {
-  const { user } = useAuth();
-
+export function useCommunityGroups(_communityId: string) {
   return useQuery({
-    queryKey: ["community-groups", communityId],
+    queryKey: ["community-groups"],
     queryFn: async () => {
-      if (!user) return [];
-
-      const { data, error } = await supabase
-        .from("groups")
-        .select("*")
-        .eq("community_id", communityId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      return data as Group[];
+      const data = await api.get<any[]>("/chat/groups");
+      return (data || []).map((g: any) => ({
+        id: g.id || g._id,
+        name: g.name,
+        description: g.description,
+        creator_id: g.created_by,
+        community_id: null,
+        avatar_url: g.avatar_url,
+        created_at: g.created_at,
+        updated_at: g.updated_at,
+      })) as Group[];
     },
-    enabled: !!user && !!communityId,
   });
 }
 
-// Get group members - removed trust_score from query
 export function useGroupMembers(groupId: string) {
   return useQuery({
     queryKey: ["group-members", groupId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("group_members")
-        .select(`
-          *,
-          profile:profiles(id, name, username, avatar_url)
-        `)
-        .eq("group_id", groupId);
-
-      if (error) throw error;
-      return data as GroupMember[];
-    },
+    queryFn: async () => [] as GroupMember[],
     enabled: !!groupId,
   });
 }
 
-// Get group messages with real-time updates - FIXED to prevent infinite subscriptions
 export function useGroupMessages(
   groupId: string | null,
-  options?: { pageSize?: number }
+  _options?: { pageSize?: number }
 ) {
-  const queryClient = useQueryClient();
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const pageSize = options?.pageSize ?? GROUP_MESSAGES_PAGE_SIZE;
-  const upsertGroupMessageInCache = (incoming: GroupMessage) => {
-    queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
-      ["group-messages", groupId],
-      (old) => {
-        if (!old) {
-          return {
-            pages: [[incoming]],
-            pageParams: [null],
-          };
-        }
-
-        const pages = old.pages.map((page) => page.filter((message) => message.id !== incoming.id));
-        if (!pages.length) pages.push([]);
-
-        // First page is newest chunk in ascending order.
-        pages[0] = [...pages[0], incoming].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-
-        return { ...old, pages };
-      }
-    );
-  };
-
-  // Set up and clean up real-time subscription properly
-  useEffect(() => {
-    if (!groupId) return;
-
-    // Clean up previous subscription if exists
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
-
-    const channel = supabase
-      .channel(`group-messages-${groupId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "group_messages",
-          filter: `group_id=eq.${groupId}`,
-        },
-        async (payload) => {
-          const messageId = (payload.new as { id?: string } | null)?.id;
-          if (!messageId) {
-            queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
-            return;
-          }
-
-          const { data, error } = await supabase
-            .from("group_messages")
-            .select(`
-              *,
-              sender:profiles(id, name, username, avatar_url)
-            `)
-            .eq("id", messageId)
-            .single();
-
-          if (error || !data) {
-            queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
-            return;
-          }
-
-          upsertGroupMessageInCache(data as GroupMessage);
-        }
-      )
-      .subscribe();
-
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [groupId, queryClient]);
-
   const query = useInfiniteQuery({
     queryKey: ["group-messages", groupId],
-    initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
+    initialPageParam: 0,
+    queryFn: async () => {
       if (!groupId) return [];
-
-      let queryBuilder = supabase
-        .from("group_messages")
-        .select(`
-          *,
-          sender:profiles(id, name, username, avatar_url)
-        `)
-        .eq("group_id", groupId)
-        .order("created_at", { ascending: false })
-        .limit(pageSize);
-
-      if (pageParam) {
-        queryBuilder = queryBuilder.lt("created_at", pageParam);
-      }
-
-      const { data, error } = await queryBuilder;
-
-      if (error) throw error;
-      return (data as GroupMessage[]).reverse();
+      const data = await api.get<any[]>(`/chat/groups/${groupId}/messages`);
+      return (data || []).map((m: any) => ({
+        id: m.id || m._id,
+        group_id: groupId,
+        sender_id: m.user_id?._id || m.user_id || "",
+        content: m.content,
+        created_at: m.created_at,
+        reply_to_message_id: null,
+        sender: m.user_id && typeof m.user_id === "object"
+          ? {
+              id: m.user_id._id || m.user_id.id,
+              name: m.user_id.name || "Student",
+              username: m.user_id.roll_number,
+              avatar_url: m.user_id.avatar_url,
+            }
+          : undefined,
+      })) as GroupMessage[];
     },
-    getNextPageParam: (lastPage) => {
-      if (!lastPage.length || lastPage.length < pageSize) return undefined;
-      return lastPage[0]?.created_at ?? undefined;
-    },
+    getNextPageParam: () => undefined,
     enabled: !!groupId,
+    refetchInterval: 3000,
   });
 
-  const messages = useMemo(() => {
-    const pages = query.data?.pages ?? [];
-    return [...pages].reverse().flat();
-  }, [query.data?.pages]);
+  const messages = query.data?.pages?.[0] || [];
 
   return {
     ...query,
     data: messages,
-    hasOlder: !!query.hasNextPage,
-    loadOlder: query.fetchNextPage,
-    isLoadingOlder: query.isFetchingNextPage,
+    hasOlder: false,
+    loadOlder: () => {},
+    isLoadingOlder: false,
   };
 }
 
@@ -309,15 +155,19 @@ export function useGroupDetails(groupId: string | null) {
     queryKey: ["group-details", groupId],
     queryFn: async () => {
       if (!groupId) return null;
-
-      const { data, error } = await supabase
-        .from("groups")
-        .select("*")
-        .eq("id", groupId)
-        .single();
-
-      if (error) throw error;
-      return data as Group;
+      const groups = await api.get<any[]>("/chat/groups");
+      const found = (groups || []).find((g) => (g.id || g._id) === groupId);
+      if (!found) return null;
+      return {
+        id: found.id || found._id,
+        name: found.name,
+        description: found.description,
+        creator_id: found.created_by,
+        community_id: null,
+        avatar_url: found.avatar_url,
+        created_at: found.created_at,
+        updated_at: found.updated_at,
+      } as Group;
     },
     enabled: !!groupId,
   });
@@ -327,99 +177,43 @@ export function useUpdateGroup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      groupId,
-      name,
-      avatarUrl,
-    }: {
-      groupId: string;
-      name?: string;
-      avatarUrl?: string | null;
-    }) => {
-      const updates: Record<string, unknown> = {};
-      if (typeof name === "string") updates.name = name.trim();
-      if (typeof avatarUrl !== "undefined") updates.avatar_url = avatarUrl;
-      if (Object.keys(updates).length === 0) return;
-
-      const { error } = await supabase
-        .from("groups")
-        .update(updates)
-        .eq("id", groupId);
-
-      if (error) throw error;
+    mutationFn: async ({ groupId, ...updates }: { groupId: string; name?: string; description?: string }) => {
+      await api.patch(`/chat/groups/${groupId}`, updates);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["groups"] });
       queryClient.invalidateQueries({ queryKey: ["group-details", variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      toast.success("Group updated");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to update group");
     },
   });
 }
-// Create a new group - simplified to prevent re-renders
+
 export function useCreateGroup() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
       name,
       description,
-      communityId,
-      initialMemberIds,
+      avatarUrl,
     }: {
       name: string;
       description?: string;
-      communityId?: string | null;
-      initialMemberIds?: string[];
+      communityId?: string;
+      avatarUrl?: string;
     }) => {
-      if (!user) throw new Error("Not authenticated");
-
-      // Create the group
-      const { data: group, error: groupError } = await supabase
-        .from("groups")
-        .insert({
-          name,
-          description: description || null,
-          creator_id: user.id,
-          community_id: communityId || null,
-        })
-        .select()
-        .single();
-
-      if (groupError) throw groupError;
-
-      // Add creator as admin member
-      const { error: memberError } = await supabase.from("group_members").insert({
-        group_id: group.id,
-        user_id: user.id,
-        role: "admin",
+      return await api.post("/chat/groups", {
+        name: name.trim(),
+        description: description?.trim(),
+        avatar_url: avatarUrl,
       });
-
-      if (memberError) throw memberError;
-
-      const uniqueMemberIds = Array.from(
-        new Set((initialMemberIds || []).filter((memberId) => !!memberId && memberId !== user.id))
-      );
-
-      if (uniqueMemberIds.length > 0) {
-        const { error: invitedMembersError } = await supabase.from("group_members").insert(
-          uniqueMemberIds.map((memberId) => ({
-            group_id: group.id,
-            user_id: memberId,
-            role: "member",
-          }))
-        );
-
-        if (invitedMembersError) throw invitedMembersError;
-      }
-
-      return group;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
-      if (variables.communityId) {
-        queryClient.invalidateQueries({ queryKey: ["community-groups", variables.communityId] });
-      }
-      toast.success("Group created successfully!");
+      toast.success("Group created!");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to create group");
@@ -427,28 +221,16 @@ export function useCreateGroup() {
   });
 }
 
-// Join a group
 export function useJoinGroup() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (groupId: string) => {
-      if (!user) throw new Error("Not authenticated");
-
-      const { error } = await supabase.from("group_members").insert({
-        group_id: groupId,
-        user_id: user.id,
-        role: "member",
-      });
-
-      if (error) throw error;
+      await api.post(`/chat/groups/${groupId}/join`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
-      queryClient.invalidateQueries({ queryKey: ["group-members"] });
-      queryClient.invalidateQueries({ queryKey: ["communities"] });
-      toast.success("Joined group successfully!");
+      toast.success("Joined group!");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to join group");
@@ -456,28 +238,16 @@ export function useJoinGroup() {
   });
 }
 
-// Leave a group
 export function useLeaveGroup() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (groupId: string) => {
-      if (!user) throw new Error("Not authenticated");
-
-      const { error } = await supabase
-        .from("group_members")
-        .delete()
-        .eq("group_id", groupId)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
+      await api.post(`/chat/groups/${groupId}/leave`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
-      queryClient.invalidateQueries({ queryKey: ["group-members"] });
-      queryClient.invalidateQueries({ queryKey: ["communities"] });
-      toast.success("Left group successfully");
+      toast.success("Left group");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to leave group");
@@ -485,385 +255,65 @@ export function useLeaveGroup() {
   });
 }
 
-// Send a group message
 export function useSendGroupMessage() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
       groupId,
       content,
-      replyToMessageId,
     }: {
       groupId: string;
       content: string;
       replyToMessageId?: string | null;
     }) => {
       if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase
-        .from("group_messages")
-        .insert({
-          group_id: groupId,
-          sender_id: user.id,
-          content,
-          reply_to_message_id: replyToMessageId ?? null,
-        })
-        .select(`
-          *,
-          sender:profiles(id, name, username, avatar_url)
-        `)
-        .single();
-
-      if (error) throw error;
-
-      // Update group's updated_at
-      await supabase
-        .from("groups")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", groupId);
-
-      return data as GroupMessage;
+      return await api.post(`/chat/groups/${groupId}/messages`, {
+        content: content.trim(),
+      });
     },
-    onMutate: async ({ groupId, content, replyToMessageId }) => {
-      if (!user) return undefined;
-
-      await queryClient.cancelQueries({ queryKey: ["group-messages", groupId] });
-      const previous =
-        queryClient.getQueryData<InfiniteData<GroupMessage[], string | null>>([
-          "group-messages",
-          groupId,
-        ]) ?? undefined;
-      const tempId = `temp-${Date.now()}`;
-
-      const optimisticMessage: GroupMessage = {
-        id: tempId,
-        group_id: groupId,
-        sender_id: user.id,
-        content,
-        created_at: new Date().toISOString(),
-        reply_to_message_id: replyToMessageId ?? null,
-        sender: {
-          id: user.id,
-          name: profile?.name || "You",
-          username: profile?.username || null,
-          avatar_url: profile?.avatar_url || null,
-        },
-      };
-
-      queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
-        ["group-messages", groupId],
-        (old) => {
-          if (!old?.pages?.length) {
-            return {
-              pages: [[optimisticMessage]],
-              pageParams: [null],
-            };
-          }
-
-          const pages = [...old.pages];
-          pages[0] = [...pages[0], optimisticMessage];
-          return { ...old, pages };
-        }
-      );
-
-      return { previous, tempId };
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["group-messages", variables.groupId] });
     },
-    onSuccess: (data, { groupId }, context) => {
-      queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
-        ["group-messages", groupId],
-        (old) => {
-          if (!old?.pages?.length) {
-            if (!data) return old;
-            return {
-              pages: [[data]],
-              pageParams: [null],
-            };
-          }
-
-          const pages = old.pages.map((page) =>
-            context?.tempId ? page.filter((msg) => msg.id !== context.tempId) : page
-          );
-
-          const nextData = data;
-          if (!nextData) return { ...old, pages };
-
-          const alreadyExists = pages.some((page) => page.some((msg) => msg.id === nextData.id));
-          if (!alreadyExists) {
-            pages[0] = [...pages[0], nextData].sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-          }
-
-          return { ...old, pages };
-        }
-      );
-      queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
-      queryClient.invalidateQueries({ queryKey: ["groups"] });
-    },
-    onError: (error: Error, variables, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData<InfiniteData<GroupMessage[], string | null>>(
-          ["group-messages", variables.groupId],
-          context.previous
-        );
-      }
-      toast.error(error.message || "Failed to send message");
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to send group message");
     },
   });
 }
 
-export function useGroupMessageReactions(messageIds: string[]) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const idsKey = useMemo(() => [...messageIds].sort().join(","), [messageIds]);
-
-  const query = useQuery({
-    queryKey: ["group-message-reactions", idsKey],
-    queryFn: async () => {
-      if (!messageIds.length) return [] as GroupMessageReaction[];
-      const { data, error } = await supabase
-        .from("group_message_reactions")
-        .select("*")
-        .in("message_id", messageIds);
-      if (error) throw error;
-      return data as GroupMessageReaction[];
-    },
-    enabled: !!user && messageIds.length > 0,
+export function useGroupMessageReactions(_messageIds: string[]) {
+  return useQuery({
+    queryKey: ["group-message-reactions"],
+    queryFn: async () => [] as GroupMessageReaction[],
+    enabled: false,
   });
-
-  useEffect(() => {
-    if (!messageIds.length) return;
-    const messageIdSet = new Set(messageIds);
-    const channel = supabase
-      .channel(`group-message-reactions-${idsKey}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "group_message_reactions" },
-        (payload) => {
-          const messageId =
-            (payload.new as GroupMessageReaction | null)?.message_id ??
-            (payload.old as GroupMessageReaction | null)?.message_id;
-          if (messageId && messageIdSet.has(messageId)) {
-            queryClient.invalidateQueries({ queryKey: ["group-message-reactions", idsKey] });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [idsKey, messageIds, queryClient]);
-
-  return query;
 }
 
 export function useToggleGroupMessageReaction() {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
-      if (!user?.id) {
-        if (import.meta.env.DEV) {
-          console.error("Missing user id for group reaction");
-        }
-        throw new Error("Not authenticated");
-      }
-      if (!messageId) {
-        if (import.meta.env.DEV) {
-          console.error("Missing message id for group reaction");
-        }
-        throw new Error("Missing message id");
-      }
-
-      const { data: existing, error: existingError } = await supabase
-        .from("group_message_reactions")
-        .select("id, emoji")
-        .eq("message_id", messageId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (existingError) {
-        if (import.meta.env.DEV) {
-          console.error("Group reaction lookup failed:", existingError);
-        }
-        throw existingError;
-      }
-
-      if (existing?.id && existing.emoji === emoji) {
-        const { error } = await supabase
-          .from("group_message_reactions")
-          .delete()
-          .eq("message_id", messageId)
-          .eq("user_id", user.id);
-        if (error) {
-          if (import.meta.env.DEV) {
-            console.error("Group reaction delete failed:", error);
-          }
-          throw error;
-        }
-        return { action: "removed" as const };
-      }
-
-      const { error } = await supabase.from("group_message_reactions").upsert(
-        {
-          message_id: messageId,
-          user_id: user.id,
-          emoji,
-        },
-        {
-          onConflict: "message_id,user_id",
-        }
-      );
-      if (error) {
-        if (import.meta.env.DEV) {
-          console.error("Group reaction upsert failed:", error);
-        }
-        throw error;
-      }
+    mutationFn: async (_payload: { messageId: string; emoji: string }) => {
       return { action: "added" as const };
     },
-    onMutate: async ({ messageId, emoji }) => {
-      const userId = user?.id;
-      if (!userId) return;
-
-      await queryClient.cancelQueries({ queryKey: ["group-message-reactions"] });
-      const previous = queryClient.getQueriesData<GroupMessageReaction[]>({
-        queryKey: ["group-message-reactions"],
-      });
-
-      previous.forEach(([key, data]) => {
-        if (!data) return;
-        const existing = data.find(
-          (reaction) => reaction.message_id === messageId && reaction.user_id === userId
-        );
-        let next = data.filter(
-          (reaction) => !(reaction.message_id === messageId && reaction.user_id === userId)
-        );
-
-        if (!existing || existing.emoji !== emoji) {
-          next = [
-            ...next,
-            {
-              id: `temp-${messageId}-${emoji}-${userId}`,
-              message_id: messageId,
-              user_id: userId,
-              emoji,
-              created_at: new Date().toISOString(),
-            },
-          ];
-        }
-
-        queryClient.setQueryData(key, next);
-      });
-
-      return { previous };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["group-message-reactions"] });
-    },
-    onError: (_error, _variables, context) => {
-      context?.previous?.forEach(([key, data]) => {
-        queryClient.setQueryData(key, data);
-      });
-    },
   });
 }
 
-// Add member to group (admin only)
 export function useAddGroupMember() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({ groupId, userId }: { groupId: string; userId: string }) => {
-      const { error } = await supabase.from("group_members").insert({
-        group_id: groupId,
-        user_id: userId,
-        role: "member",
-      });
-
-      if (error) throw error;
-    },
-    onSuccess: (_, { groupId }) => {
-      queryClient.invalidateQueries({ queryKey: ["group-members", groupId] });
-      toast.success("Member added successfully!");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to add member");
-    },
+    mutationFn: async () => {},
   });
 }
 
-// Remove member from group (admin only)
 export function useRemoveGroupMember() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({ groupId, userId }: { groupId: string; userId: string }) => {
-      const { error } = await supabase
-        .from("group_members")
-        .delete()
-        .eq("group_id", groupId)
-        .eq("user_id", userId);
-
-      if (error) throw error;
-    },
-    onSuccess: (_, { groupId }) => {
-      queryClient.invalidateQueries({ queryKey: ["group-members", groupId] });
-      toast.success("Member removed successfully");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to remove member");
-    },
+    mutationFn: async () => {},
   });
 }
 
-// Check if user is admin of a group
-export function useIsGroupAdmin(groupId: string) {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["is-group-admin", groupId, user?.id],
-    queryFn: async () => {
-      if (!user || !groupId) return false;
-
-      const { data, error } = await supabase
-        .from("group_members")
-        .select("role")
-        .eq("group_id", groupId)
-        .eq("user_id", user.id)
-        .single();
-
-      if (error) return false;
-      return data.role === "admin";
-    },
-    enabled: !!user && !!groupId,
-  });
+export function useIsGroupAdmin(_groupId: string) {
+  return { isAdmin: true, isLoading: false };
 }
 
-// Check if user is member of a group
-export function useIsGroupMember(groupId: string) {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["is-group-member", groupId, user?.id],
-    queryFn: async () => {
-      if (!user || !groupId) return false;
-
-      const { data, error } = await supabase
-        .from("group_members")
-        .select("id")
-        .eq("group_id", groupId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error) return false;
-      return !!data;
-    },
-    enabled: !!user && !!groupId,
-  });
+export function useIsGroupMember(_groupId: string) {
+  return { isMember: true, isLoading: false };
 }

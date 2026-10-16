@@ -3,10 +3,21 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { Tables } from "@/integrations/supabase/types";
 import { normalizeUsername, USERNAME_LIMITS } from "@/lib/utils";
 
-type Profile = Tables<"profiles">;
+export interface Profile {
+  id: string;
+  name?: string | null;
+  username?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  avatar_url?: string | null;
+  branch?: string | null;
+  year?: string | null;
+  section?: string | null;
+  roll_number?: string | null;
+  stats?: any;
+}
 
 interface UsernameCheck {
   available: boolean;

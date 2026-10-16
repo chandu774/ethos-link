@@ -24,14 +24,13 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 import {
   buildStudentLearningProfile,
   generateTutorRecommendations,
   getKnowledgeStateSummary,
 } from "@/services/studentLearningProfileService";
-
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 interface TutorMessage {
   id: string;
@@ -184,66 +183,33 @@ Pedagogical Instructions:
 5. If the student asks about a concept related to their identified weak areas, give extra clarity and reinforce foundational principles.`;
 
     try {
-      const resp = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages.slice(-4).map((m) => ({
-              role: m.sender === "ai" ? "assistant" : "user",
-              content: m.text,
-            })),
-            { role: "user", content: userText },
-          ],
-        }),
+      const res = await api.post<{ reply: string }>("/ai/chat", {
+        messages: [
+          { role: "user", content: systemPrompt },
+          ...messages.slice(-4).map((m) => ({
+            role: m.sender === "ai" ? "assistant" : "user",
+            content: m.text,
+          })),
+          { role: "user", content: userText },
+        ],
       });
 
-      if (!resp.ok) {
-        throw new Error(`Edge function returned status ${resp.status}`);
-      }
-
-      const reader = resp.body!.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
+      const replyText = res?.reply || "I'm here to help!";
       let accumulated = "";
+      const step = Math.max(1, Math.floor(replyText.length / 25));
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        textBuffer += decoder.decode(value, { stream: true });
-        let newlineIndex: number;
-
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              accumulated += content;
-              setMessages((prev) =>
-                prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: accumulated } : msg))
-              );
-            }
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
+      for (let i = 1; i <= replyText.length; i += step) {
+        accumulated = replyText.slice(0, i);
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: accumulated } : msg))
+        );
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
+
+      accumulated = replyText;
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: accumulated } : msg))
+      );
 
       // Check if any weak area concept was discussed, offer targeted quiz practice
       const discussedWeak = learningProfile?.weakAreas.find((w) => {

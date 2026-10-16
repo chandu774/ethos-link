@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 
 const DEFAULT_PAGE_SIZE = 30;
 
@@ -22,121 +22,40 @@ export interface AssignmentMessageItem {
   user?: MessageUser | null;
 }
 
-interface AssignmentMessageRow {
-  id: string;
-  assignment_id: string;
-  user_id: string;
-  message: string;
-  created_at: string;
-  user?: MessageUser | null;
-}
-
-async function fetchMessageById(messageId: string) {
-  const { data, error } = await supabase
-    .from("assignment_messages")
-    .select(`
-      id,
-      assignment_id,
-      user_id,
-      message,
-      created_at,
-      user:profiles_public(id, name, username, avatar_url)
-    `)
-    .eq("id", messageId)
-    .single();
-
-  if (error) throw error;
-  return data as AssignmentMessageItem;
-}
-
 export function useAssignmentChat(assignmentId: string, pageSize = DEFAULT_PAGE_SIZE) {
-  const queryClient = useQueryClient();
-
   const query = useInfiniteQuery({
     queryKey: ["assignment-chat", assignmentId, pageSize],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
-      const from = pageParam * pageSize;
-      const to = from + pageSize - 1;
-      const { data, error } = await supabase
-        .from("assignment_messages")
-        .select(`
-          id,
-          assignment_id,
-          user_id,
-          message,
-          created_at,
-          user:profiles_public(id, name, username, avatar_url)
-        `)
-        .eq("assignment_id", assignmentId)
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (error) throw error;
-      return (data || []) as AssignmentMessageRow[];
-    },
-    getNextPageParam: (lastPage, allPages) => (lastPage.length < pageSize ? undefined : allPages.length),
-    enabled: !!assignmentId,
-  });
-
-  useEffect(() => {
-    if (!assignmentId) return;
-
-    const channel = supabase
-      .channel(`assignment-chat-${assignmentId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "assignment_messages",
-          filter: `assignment_id=eq.${assignmentId}`,
-        },
-        async (payload) => {
-          try {
-            const incoming = await fetchMessageById(payload.new.id as string);
-            queryClient.setQueryData(
-              ["assignment-chat", assignmentId, pageSize],
-              (
-                current:
-                  | { pages: AssignmentMessageRow[][]; pageParams: number[] }
-                  | undefined
-              ) => {
-                if (!current) return current;
-                const exists = current.pages.some((page) => page.some((row) => row.id === incoming.id));
-                if (exists) return current;
-
-                const nextPages = [...current.pages];
-                if (!nextPages[0]) {
-                  nextPages[0] = [incoming];
-                } else {
-                  nextPages[0] = [incoming, ...nextPages[0]];
-                }
-
-                return {
-                  ...current,
-                  pages: nextPages,
-                };
+    queryFn: async () => {
+      try {
+        const data = await api.get<any[]>(`/assignments/${assignmentId}/messages`);
+        return (data || []).map((m: any) => ({
+          id: m.id || m._id,
+          assignment_id: assignmentId,
+          user_id: m.user_id?._id || m.user_id,
+          message: m.message || m.content,
+          created_at: m.created_at || new Date().toISOString(),
+          user: m.user_id && typeof m.user_id === "object"
+            ? {
+                id: m.user_id._id || m.user_id.id,
+                name: m.user_id.name || "Student",
+                username: m.user_id.roll_number,
+                avatar_url: m.user_id.avatar_url,
               }
-            );
-          } catch {
-            queryClient.invalidateQueries({ queryKey: ["assignment-chat", assignmentId] });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [assignmentId, pageSize, queryClient]);
+            : null,
+        })) as AssignmentMessageItem[];
+      } catch {
+        return [] as AssignmentMessageItem[];
+      }
+    },
+    getNextPageParam: () => undefined,
+    enabled: !!assignmentId,
+    refetchInterval: 5000,
+  });
 
   const messages = useMemo(() => {
     const pages = query.data?.pages || [];
-    return pages
-      .map((page) => [...page].reverse())
-      .reverse()
-      .flat() as AssignmentMessageItem[];
+    return pages.flat() as AssignmentMessageItem[];
   }, [query.data?.pages]);
 
   return {
@@ -155,12 +74,13 @@ export function useSendAssignmentMessage(assignmentId: string) {
       if (!assignmentId) throw new Error("Assignment not selected.");
       if (!message.trim()) throw new Error("Message is empty.");
 
-      const { error } = await supabase.from("assignment_messages").insert({
-        assignment_id: assignmentId,
-        user_id: user.id,
-        message: message.trim(),
-      });
-      if (error) throw error;
+      try {
+        await api.post(`/assignments/${assignmentId}/messages`, {
+          message: message.trim(),
+        });
+      } catch (err: any) {
+        console.warn("Assignment message error:", err);
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to send message");

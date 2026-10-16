@@ -16,7 +16,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface StudentQuizItem {
@@ -54,111 +54,28 @@ export default function Assessments() {
     setLoading(true);
 
     try {
-      // 1. Fetch student's enrolled classrooms
-      const { data: memberData, error: memErr } = await supabase
-        .from("classroom_members")
-        .select(`
-          classroom_id,
-          classroom:classrooms!classroom_members_classroom_id_fkey(
-            id,
-            name,
-            course,
-            branch,
-            year,
-            section
-          )
-        `)
-        .eq("student_id", user.id);
+      const rawQuizzes = await api.get<any[]>("/quizzes");
 
-      if (memErr) throw memErr;
-
-      const classroomsMap = new Map<string, string>();
-      const enrolledClassroomIds: string[] = [];
-
-      (memberData || []).forEach((m: any) => {
-        if (m.classroom_id) {
-          enrolledClassroomIds.push(m.classroom_id);
-          const c = m.classroom;
-          if (c) {
-            classroomsMap.set(m.classroom_id, c.name || `${c.course} ${c.branch} - ${c.section}`);
-          }
-        }
-      });
-
-      // 2. Fetch published quizzes for this student's cohort
-      let quizQuery = supabase
-        .from("quizzes")
-        .select("id, title, topic, subject, difficulty, status, duration_minutes, max_attempts, classroom_id, created_at")
-        .ilike("status", "PUBLISHED")
-        .order("created_at", { ascending: false });
-
-      if (enrolledClassroomIds.length > 0) {
-        quizQuery = quizQuery.or(`classroom_id.in.(${enrolledClassroomIds.join(",")}),classroom_id.is.null`);
-      } else {
-        quizQuery = quizQuery.is("classroom_id", null);
-      }
-
-      const { data: rawQuizzes, error: qzErr } = await quizQuery;
-      if (qzErr) throw qzErr;
-
-      const quizList = rawQuizzes || [];
-      if (quizList.length === 0) {
-        setQuizzes([]);
-        return;
-      }
-
-      // 3. Fetch questions count for each quiz
-      const quizIds = quizList.map((q) => q.id);
-      const { data: qQuestions } = await supabase
-        .from("quiz_questions")
-        .select("id, quiz_id")
-        .in("quiz_id", quizIds);
-
-      const questionCounts: Record<string, number> = {};
-      (qQuestions || []).forEach((q: any) => {
-        questionCounts[q.quiz_id] = (questionCounts[q.quiz_id] || 0) + 1;
-      });
-
-      // 4. Fetch student's attempts for these quizzes
-      const { data: studentAttempts } = await supabase
-        .from("quiz_attempts")
-        .select("id, quiz_id, score, max_score, completed_at")
-        .eq("user_id", user.id)
-        .in("quiz_id", quizIds)
-        .order("completed_at", { ascending: false });
-
-      const attemptsByQuiz: Record<string, any[]> = {};
-      (studentAttempts || []).forEach((att: any) => {
-        if (!attemptsByQuiz[att.quiz_id]) {
-          attemptsByQuiz[att.quiz_id] = [];
-        }
-        attemptsByQuiz[att.quiz_id].push(att);
-      });
-
-      // 5. Assemble enriched quiz items
-      const enriched: StudentQuizItem[] = quizList.map((q) => {
-        const clsName = q.classroom_id ? classroomsMap.get(q.classroom_id) || "Enrolled Classroom" : "General";
-        return {
-          id: q.id,
-          title: q.title,
-          topic: q.topic,
-          subject: q.subject,
-          difficulty: q.difficulty || "Medium",
-          status: q.status,
-          duration_minutes: q.duration_minutes || 15,
-          max_attempts: q.max_attempts || 1,
-          classroom_id: q.classroom_id,
-          classroom_name: clsName,
-          created_at: q.created_at,
-          questions_count: questionCounts[q.id] || 0,
-          attempts: attemptsByQuiz[q.id] || [],
-        };
-      });
+      const enriched: StudentQuizItem[] = (rawQuizzes || []).map((q: any) => ({
+        id: q.id || q._id,
+        title: q.title,
+        topic: q.topic,
+        subject: q.subject,
+        difficulty: q.difficulty || "Medium",
+        status: q.status || "PUBLISHED",
+        duration_minutes: q.duration_minutes || 15,
+        max_attempts: q.max_attempts || 1,
+        classroom_id: q.classroom_id?._id || q.classroom_id?.id || q.classroom_id,
+        classroom_name: q.classroom_id?.name || "Enrolled Classroom",
+        created_at: q.created_at,
+        questions_count: q.questions_count ?? q.question_count ?? 0,
+        attempts: q.attempts || [],
+      }));
 
       setQuizzes(enriched);
     } catch (err: any) {
       console.error("Failed to load student quizzes:", err);
-      toast.error("Failed to load assessments: " + err.message);
+      toast.error("Failed to load assessments: " + (err.message || "Unknown error"));
     } finally {
       setLoading(false);
     }

@@ -21,7 +21,7 @@ import {
   FolderTree,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { calculateConceptStatus, ConceptMasteryStatus } from "@/services/conceptMasteryRules";
 import { cn } from "@/lib/utils";
 
@@ -78,39 +78,12 @@ export default function ProgressPage() {
     setLoading(true);
     try {
       // 1. Fetch real concept mastery records for this student
-      const { data: cmData, error: cmErr } = await supabase
-        .from("concept_mastery")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("last_assessed_at", { ascending: false });
-
-      if (cmErr) throw cmErr;
-      setConcepts((cmData as ConceptMasteryRow[]) || []);
+      const cmData = await api.get<ConceptMasteryRow[]>("/analytics/concept-mastery");
+      setConcepts(cmData || []);
 
       // 2. Fetch real quiz attempts with quiz metadata
-      const { data: attData, error: attErr } = await supabase
-        .from("quiz_attempts")
-        .select(`
-          id,
-          quiz_id,
-          score,
-          max_score,
-          percentage,
-          completed_at,
-          quiz:quizzes!quiz_attempts_quiz_id_fkey (
-            id,
-            title,
-            subject,
-            topic,
-            difficulty
-          )
-        `)
-        .eq("user_id", user.id)
-        .order("completed_at", { ascending: false })
-        .limit(10);
-
-      if (attErr) throw attErr;
-      setAttempts((attData as any[]) || []);
+      const attData = await api.get<QuizAttemptRow[]>("/quizzes/attempts/my");
+      setAttempts(attData || []);
     } catch (err: any) {
       console.error("Error loading progress data:", err);
     } finally {

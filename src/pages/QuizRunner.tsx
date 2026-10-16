@@ -24,8 +24,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { calculateConceptStatus, calculatePerformanceTrend } from "@/services/conceptMasteryRules";
+import { api } from "@/lib/apiClient";
 import {
   generatePostQuizAnalysis,
   buildMistakeExplanation,
@@ -58,8 +57,10 @@ export function getOptionText(opt: any): string {
 interface QuestionItem {
   id: string;
   question: string;
+  question_text?: string;
   options: any[]; // JSON array of string or object
-  correct_option: number;
+  correct_option?: number;
+  correct_option_index?: number;
   concept: string;
   marks: number;
   explanation?: string | null;
@@ -102,50 +103,31 @@ export default function QuizRunner() {
     setLoading(true);
 
     try {
-      // 1. Fetch Quiz Header
-      const { data: qData, error: qErr } = await supabase
-        .from("quizzes")
-        .select("*")
-        .eq("id", quizId)
-        .single();
+      const qData = await api.get<any>(`/quizzes/${quizId}`);
+      if (!qData) {
+        toast.error("Quiz not found");
+        setLoading(false);
+        return;
+      }
 
-      if (qErr) throw qErr;
       setQuiz(qData as QuizDetail);
 
-      // Check status: only PUBLISHED quizzes can be attempted
       if (qData.status?.toUpperCase() !== "PUBLISHED") {
         setLoading(false);
         return;
       }
 
-      // 2. Fetch Questions with deterministic ordering
-      const { data: qList, error: qsErr } = await supabase
-        .from("quiz_questions")
-        .select("*")
-        .eq("quiz_id", quizId)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-
-      if (qsErr) throw qsErr;
-      const loadedQuestions = (qList as QuestionItem[]) || [];
+      const loadedQuestions = (qData.questions as QuestionItem[]) || [];
       setQuestions(loadedQuestions);
 
-      // 3. Check previous attempts
-      const { data: attemptsData, error: attErr } = await supabase
-        .from("quiz_attempts")
-        .select("*")
-        .eq("quiz_id", quizId)
-        .eq("user_id", user.id)
-        .order("completed_at", { ascending: false });
-
-      if (!attErr && attemptsData && attemptsData.length > 0) {
+      const attemptsData = qData.attempts || [];
+      if (attemptsData.length > 0) {
         const limit = qData.max_attempts || 1;
         if (attemptsData.length >= limit) {
           setMaxAttemptsReached(true);
           const latest = attemptsData[0];
           setPreviousAttempt(latest);
 
-          // Populate previous result view if answers are present
           if (latest.answers && typeof latest.answers === "object") {
             buildPreviousAttemptView(latest, loadedQuestions, qData);
           }
@@ -288,33 +270,32 @@ export default function QuizRunner() {
 
     setSubmitting(true);
     try {
-      // 1. Deterministic scoring calculation
-      let totalScore = 0;
-      let maxScore = 0;
+      const response = await api.post(`/quizzes/${quiz.id}/attempts`, {
+        answers: selectedAnswers,
+      });
+
+      const totalScore = response.score ?? 0;
+      const maxScore = response.total_questions ?? questions.length;
+      const percentage = response.percentage ?? (maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0);
+      const results = response.results || [];
+
       let correctCount = 0;
       let incorrectCount = 0;
       const conceptMap: Record<string, { correct: number; total: number }> = {};
-      const answersObj: Record<string, any> = {};
       const mistakes: QuestionMistake[] = [];
       const reviews: any[] = [];
 
-      questions.forEach((q) => {
-        const weight = q.marks || 1;
-        maxScore += weight;
-
-        const concept = q.concept || "General";
+      results.forEach((r: any) => {
+        const concept = r.concept || "General";
         if (!conceptMap[concept]) conceptMap[concept] = { correct: 0, total: 0 };
         conceptMap[concept].total += 1;
 
-        const rawOptions = Array.isArray(q.options) ? q.options : [];
-        const chosen = selectedAnswers[q.id];
-        const hasAnswered = chosen !== undefined && chosen !== null;
-        const chosenIndex = hasAnswered ? Number(chosen) : null;
-        const correctIndex = Number(q.correct_option_index);
-        const isCorrect = hasAnswered && chosenIndex === correctIndex;
+        const rawOptions = Array.isArray(r.options) ? r.options : [];
+        const chosenIndex = r.selected_option >= 0 ? Number(r.selected_option) : null;
+        const correctIndex = Number(r.correct_option);
+        const isCorrect = Boolean(r.is_correct);
 
         if (isCorrect) {
-          totalScore += weight;
           correctCount++;
           conceptMap[concept].correct += 1;
         } else {
@@ -330,22 +311,17 @@ export default function QuizRunner() {
             ? getOptionText(rawOptions[correctIndex])
             : "Correct Answer";
 
-        answersObj[q.id] = {
-          chosen_option: chosenIndex,
-          chosen_text: chosenText,
-          correct_option: correctIndex,
-          correct_text: correctText,
-          is_correct: isCorrect,
-          topic: q.topic || quiz.topic,
-          concept: q.concept || "General",
-          marks: isCorrect ? weight : 0,
-        };
-
         if (!isCorrect) {
-          const expl = buildMistakeExplanation(q.question, concept, chosenText, correctText, q.explanation || undefined);
+          const expl = buildMistakeExplanation(
+            r.question_text || "",
+            concept,
+            chosenText,
+            correctText,
+            r.explanation || undefined
+          );
           mistakes.push({
-            questionId: q.id,
-            question: q.question,
+            questionId: r.question_id,
+            question: r.question_text || "",
             concept,
             studentAnswer: chosenText,
             correctAnswer: correctText,
@@ -355,77 +331,18 @@ export default function QuizRunner() {
         }
 
         reviews.push({
-          id: q.id,
-          question: q.question,
+          id: r.question_id,
+          question: r.question_text || "",
           concept,
           is_correct: isCorrect,
           studentAnswer: chosenText,
           correctAnswer: correctText,
-          marks: weight,
-          marksAwarded: isCorrect ? weight : 0,
-          explanation: q.explanation || "Review the key relational definitions.",
+          marks: 1,
+          marksAwarded: isCorrect ? 1 : 0,
+          explanation: r.explanation || "Review the key relational definitions.",
         });
       });
 
-      const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
-      const submittedAt = new Date().toISOString();
-
-      // Fetch count of previous attempts to record accurate attempt_number
-      const { count: prevAttCount } = await supabase
-        .from("quiz_attempts")
-        .select("id", { count: "exact", head: true })
-        .eq("quiz_id", quiz.id)
-        .eq("user_id", user.id);
-
-      const attemptNum = (prevAttCount || 0) + 1;
-
-      // 2. Insert into public.quiz_attempts
-      const { data: createdAttempt, error: insertErr } = await supabase
-        .from("quiz_attempts")
-        .insert({
-          user_id: user.id,
-          quiz_id: quiz.id,
-          attempt_number: attemptNum,
-          started_at: startedAt,
-          submitted_at: submittedAt,
-          score: totalScore,
-          max_score: maxScore,
-          percentage: percentage,
-          answers: answersObj,
-          completed_at: submittedAt,
-        })
-        .select()
-        .single();
-
-      if (insertErr) throw insertErr;
-
-      // 3. Insert question answers into public.quiz_attempt_answers (Requirement 7)
-      const attemptAnswerRows = questions.map((q) => {
-        const chosen = selectedAnswers[q.id];
-        const hasAnswered = chosen !== undefined && chosen !== null;
-        const chosenIndex = hasAnswered ? Number(chosen) : null;
-        const correctIndex = Number(q.correct_option_index);
-        const isCorrect = hasAnswered && chosenIndex === correctIndex;
-        const weight = q.marks || 1;
-        return {
-          attempt_id: createdAttempt.id,
-          student_id: user.id,
-          quiz_id: quiz.id,
-          question_id: q.id,
-          selected_option: chosenIndex,
-          correct_option: correctIndex,
-          is_correct: isCorrect,
-          marks_awarded: isCorrect ? weight : 0,
-          subject: quiz.subject,
-          topic: q.topic || quiz.topic,
-          concept: q.concept || "General",
-          created_at: submittedAt,
-        };
-      });
-
-      await supabase.from("quiz_attempt_answers").insert(attemptAnswerRows);
-
-      // 4. Concept breakdown aggregation
       const breakdown = Object.entries(conceptMap).map(([concept, val]) => ({
         concept,
         correct: val.correct,
@@ -433,83 +350,9 @@ export default function QuizRunner() {
         accuracy: val.total > 0 ? Math.round((val.correct / val.total) * 100) : 0,
       }));
 
-      // 5. Insert historical records into public.student_concept_history (Requirement 11 & 15)
-      const historyRows = breakdown.map((cb) => ({
-        student_id: user.id,
-        quiz_id: quiz.id,
-        attempt_id: createdAttempt.id,
-        subject: quiz.subject,
-        topic: quiz.topic,
-        concept: cb.concept,
-        total_questions: cb.total,
-        correct_answers: cb.correct,
-        accuracy: cb.accuracy,
-        assessed_at: submittedAt,
-      }));
-
-      await supabase.from("student_concept_history").insert(historyRows);
-
-      // 6. Update student concept_mastery with historical rule evaluation (Requirement 12, 13, 14)
+      // Resolve recommendations if mastery demonstrated
       for (const cb of breakdown) {
-        const { data: existing } = await supabase
-          .from("concept_mastery")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("concept_name", cb.concept)
-          .maybeSingle();
-
-        const prevTotal = existing?.total_questions || 0;
-        const prevCorrect = existing?.correct_count || 0;
-        const prevAttempts = existing?.attempts_count || 0;
-
-        const newTotal = prevTotal + cb.total;
-        const newCorrect = prevCorrect + cb.correct;
-        const newIncorrect = newTotal - newCorrect;
-        const cumulativeAccuracy = newTotal > 0 ? Math.round((newCorrect / newTotal) * 100) : 0;
-        const histAcc = existing ? existing.mastery_percentage : cb.accuracy;
-
-        const status = calculateConceptStatus(cumulativeAccuracy, newTotal);
-        const trend = calculatePerformanceTrend(cb.accuracy, histAcc);
-
-        if (existing) {
-          await supabase
-            .from("concept_mastery")
-            .update({
-              subject: quiz.subject,
-              topic: quiz.topic,
-              total_questions: newTotal,
-              correct_count: newCorrect,
-              incorrect_count: newIncorrect,
-              mastery_percentage: cumulativeAccuracy,
-              latest_accuracy: cb.accuracy,
-              historical_accuracy: histAcc,
-              status: status,
-              trend: trend,
-              attempts_count: prevAttempts + 1,
-              last_assessed_at: submittedAt,
-            })
-            .eq("id", existing.id);
-        } else {
-          await supabase.from("concept_mastery").insert({
-            user_id: user.id,
-            concept_name: cb.concept,
-            subject: quiz.subject,
-            topic: quiz.topic,
-            total_questions: newTotal,
-            correct_count: newCorrect,
-            incorrect_count: newIncorrect,
-            mastery_percentage: cumulativeAccuracy,
-            latest_accuracy: cb.accuracy,
-            historical_accuracy: cb.accuracy,
-            status: status,
-            trend: "stable",
-            attempts_count: 1,
-            last_assessed_at: submittedAt,
-          });
-        }
-
-        // Closed learning loop: If student demonstrates mastery (>= 70%), resolve active recommendation
-        if (cb.accuracy >= 70) {
+        if (cb.accuracy >= 70 && user?.id) {
           await youtubeRecommendationService.resolveRecommendationAfterQuiz(
             user.id,
             cb.concept,
@@ -517,9 +360,7 @@ export default function QuizRunner() {
           );
         }
       }
-
-      // If overall topic accuracy was high, resolve any topic-level recommendation
-      if (percentage >= 70 && quiz.topic) {
+      if (percentage >= 70 && quiz.topic && user?.id) {
         await youtubeRecommendationService.resolveRecommendationByTopic(
           user.id,
           quiz.topic,

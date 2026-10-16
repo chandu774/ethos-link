@@ -1,48 +1,31 @@
-import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 import type { CollaborationNotification } from "@/lib/collaboration";
 
 export function useNotifications(limit = 20) {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
-  const query = useQuery({
+  return useQuery({
     queryKey: ["notifications", user?.id, limit],
     queryFn: async () => {
       if (!user) return [] as CollaborationNotification[];
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return data as CollaborationNotification[];
+      const data = await api.get<any[]>(`/notifications?limit=${limit}`);
+      return (data || []).map((n: any) => ({
+        id: n.id || n._id,
+        user_id: n.user_id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        action_url: n.action_url,
+        is_read: n.is_read,
+        created_at: n.created_at,
+        metadata: n.metadata,
+      })) as CollaborationNotification[];
     },
     enabled: !!user,
+    refetchInterval: 15000, // Poll every 15 seconds
   });
-
-  useEffect(() => {
-    if (!user) return;
-    const channel = supabase
-      .channel(`notifications:${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["notifications", user.id] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient, user]);
-
-  return query;
 }
 
 export function useMarkNotificationRead() {
@@ -51,11 +34,7 @@ export function useMarkNotificationRead() {
 
   return useMutation({
     mutationFn: async (notificationId: string) => {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", notificationId);
-      if (error) throw error;
+      await api.patch(`/notifications/${notificationId}/read`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
@@ -70,12 +49,7 @@ export function useMarkAllNotificationsRead() {
   return useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user.id)
-        .eq("is_read", false);
-      if (error) throw error;
+      await api.patch("/notifications/read-all");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });

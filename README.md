@@ -61,23 +61,25 @@ It is designed to feel familiar like WhatsApp/Discord, while introducing smarter
 - JavaScript
 
 **Backend**
-- Supabase
-  - Authentication
-  - PostgreSQL Database
-  - Realtime subscriptions
-  - Storage (images)
+- Node.js & Express.js
+  - RESTful APIs
+  - JWT Authentication & bcrypt
+  - MongoDB & Mongoose
+  - Local disk / cloud storage
+  - Role-based access control (Student, Faculty, Administrator)
 
 **Deployment**
-- Vercel
+- Frontend: Vite / Vercel
+- Backend: Node.js / Express
 
 ---
 
 ## 🏗️ Architecture Highlights
 
-- Realtime chat powered by Supabase Realtime
-- Secure authentication with Row Level Security (RLS)
-- Scalable community & role-based permission model
-- Modular and maintainable React component structure
+- Full-stack MERN (MongoDB, Express, React, Node.js) architecture
+- Secure authentication with bcrypt and JWT tokens
+- Scalable academic cohort, classroom & role-based permission model
+- Modular and maintainable React component structure with Tailwind & shadcn
 - Production-ready build & deployment
 
 ---

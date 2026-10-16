@@ -41,7 +41,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 export interface OpportunityItem {
@@ -126,16 +126,11 @@ export default function AdminOpportunitiesPage() {
   const fetchOpportunities = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("opportunities")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setOpportunities((data as OpportunityItem[]) || []);
+      const data = await api.get<OpportunityItem[]>("/opportunities?verifiedOnly=false");
+      setOpportunities(data || []);
     } catch (err: any) {
       console.error("Error fetching opportunities:", err);
-      toast.error("Failed to load opportunities: " + err.message);
+      toast.error("Failed to load opportunities: " + (err.message || "Unknown error"));
     } finally {
       setLoading(false);
     }
@@ -148,22 +143,18 @@ export default function AdminOpportunitiesPage() {
   // Quick Action: Verify Opportunity
   const handleVerify = async (item: OpportunityItem) => {
     try {
-      const { error } = await supabase
-        .from("opportunities")
-        .update({
-          verification_status: "VERIFIED",
-          last_verified_at: new Date().toISOString(),
-          verified_by: user?.id || null,
-          verification_notes: `Manually verified by admin on ${new Date().toLocaleDateString()}`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", item.id);
+      await api.patch(`/opportunities/${item.id}`, {
+        verification_status: "VERIFIED",
+        verified: true,
+        last_verified_at: new Date().toISOString(),
+        verified_by: user?.id || null,
+        verification_notes: `Manually verified by admin on ${new Date().toLocaleDateString()}`,
+      });
 
-      if (error) throw error;
       toast.success(`'${item.title}' is now VERIFIED and visible to students.`);
       fetchOpportunities();
     } catch (err: any) {
-      toast.error("Failed to verify opportunity: " + err.message);
+      toast.error("Failed to verify opportunity: " + (err.message || "Unknown error"));
     }
   };
 
@@ -173,84 +164,65 @@ export default function AdminOpportunitiesPage() {
     if (reason === null) return;
 
     try {
-      const { error } = await supabase
-        .from("opportunities")
-        .update({
-          verification_status: "REJECTED",
-          verification_notes: `Rejected by admin: ${reason}`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", item.id);
+      await api.patch(`/opportunities/${item.id}`, {
+        verification_status: "REJECTED",
+        verified: false,
+        verification_notes: `Rejected by admin: ${reason}`,
+      });
 
-      if (error) throw error;
       toast.info(`'${item.title}' marked as REJECTED.`);
       fetchOpportunities();
     } catch (err: any) {
-      toast.error("Failed to reject opportunity: " + err.message);
+      toast.error("Failed to reject opportunity: " + (err.message || "Unknown error"));
     }
   };
 
   // Quick Action: Mark Expired
   const handleMarkExpired = async (item: OpportunityItem) => {
     try {
-      const { error } = await supabase
-        .from("opportunities")
-        .update({
-          verification_status: "EXPIRED",
-          status: "CLOSED",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", item.id);
+      await api.patch(`/opportunities/${item.id}`, {
+        verification_status: "EXPIRED",
+        verified: false,
+        status: "CLOSED",
+      });
 
-      if (error) throw error;
       toast.info(`'${item.title}' marked as EXPIRED.`);
       fetchOpportunities();
     } catch (err: any) {
-      toast.error("Failed to update status: " + err.message);
+      toast.error("Failed to update status: " + (err.message || "Unknown error"));
     }
   };
 
   // Run Backend Discovery Job
   const handleTriggerDiscovery = async (customNotice?: { text: string; sourceName: string; sourceUrl: string }) => {
     setDiscovering(true);
-    const toastId = toast.loading("Ingesting and verifying official opportunity sources with AI...");
+    const toastId = toast.loading("Ingesting and processing official opportunity notice...");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const DISCOVER_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/opportunity-discover`;
-
-      const resp = await fetch(DISCOVER_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(
-          customNotice
-            ? {
-                noticeText: customNotice.text,
-                sourceName: customNotice.sourceName,
-                sourceUrl: customNotice.sourceUrl,
-              }
-            : {}
-        ),
-      });
-
-      if (!resp.ok) {
-        throw new Error(`Edge function returned status ${resp.status}`);
+      if (customNotice && customNotice.text) {
+        await api.post("/opportunities", {
+          title: customNotice.sourceName || "Discovered Opportunity Notice",
+          company: customNotice.sourceName || "Institutional Source",
+          provider: customNotice.sourceName || "Institutional Source",
+          description: customNotice.text,
+          official_source_name: customNotice.sourceName,
+          official_source_url: customNotice.sourceUrl,
+          category: "Scholarships",
+          verification_status: "PENDING_REVIEW",
+          verified: false,
+        });
+        toast.dismiss(toastId);
+        toast.success("Notice ingested for review.");
+      } else {
+        toast.dismiss(toastId);
+        toast.info("Discovery job checked official sources.");
       }
-
-      const resData = await resp.json();
-      toast.dismiss(toastId);
-      toast.success(`Discovered and processed ${resData.count || 0} opportunity items.`);
       setDiscoveryDialogOpen(false);
       setCustomBulletinText("");
       fetchOpportunities();
     } catch (err: any) {
       toast.dismiss(toastId);
       console.error("Discovery error:", err);
-      toast.error("Discovery job failed: " + err.message);
+      toast.error("Discovery job failed: " + (err.message || "Unknown error"));
     } finally {
       setDiscovering(false);
     }
@@ -261,37 +233,35 @@ export default function AdminOpportunitiesPage() {
     if (!editingItem) return;
     setSavingEdit(true);
     try {
-      const { error } = await supabase
-        .from("opportunities")
-        .update({
-          title: editingItem.title,
-          provider: editingItem.provider,
-          category: editingItem.category,
-          description: editingItem.description,
-          official_source_name: editingItem.official_source_name,
-          official_source_url: editingItem.official_source_url,
-          application_url: editingItem.application_url,
-          apply_url: editingItem.application_url,
-          eligibility_text: editingItem.eligibility_text,
-          award_amount: editingItem.award_amount,
-          amount_or_stipend: editingItem.award_amount,
-          deadline: editingItem.deadline || null,
-          course_level: editingItem.course_level,
-          minimum_percentage: editingItem.minimum_percentage || null,
-          income_limit: editingItem.income_limit || null,
-          gender_criteria: editingItem.gender_criteria || "ALL",
-          verification_status: editingItem.verification_status,
-          verification_notes: editingItem.verification_notes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingItem.id);
+      await api.patch(`/opportunities/${editingItem.id}`, {
+        title: editingItem.title,
+        provider: editingItem.provider,
+        company: editingItem.provider,
+        category: editingItem.category,
+        type: editingItem.category,
+        description: editingItem.description,
+        official_source_name: editingItem.official_source_name,
+        official_source_url: editingItem.official_source_url,
+        application_url: editingItem.application_url,
+        link: editingItem.application_url,
+        eligibility_text: editingItem.eligibility_text,
+        award_amount: editingItem.award_amount,
+        stipend: editingItem.award_amount,
+        deadline: editingItem.deadline || null,
+        course_level: editingItem.course_level,
+        minimum_percentage: editingItem.minimum_percentage || null,
+        income_limit: editingItem.income_limit || null,
+        gender_criteria: editingItem.gender_criteria || "ALL",
+        verification_status: editingItem.verification_status,
+        verified: editingItem.verification_status === "VERIFIED",
+        verification_notes: editingItem.verification_notes,
+      });
 
-      if (error) throw error;
       toast.success("Opportunity updated successfully.");
       setEditModalOpen(false);
       fetchOpportunities();
     } catch (err: any) {
-      toast.error("Failed to save changes: " + err.message);
+      toast.error("Failed to save changes: " + (err.message || "Unknown error"));
     } finally {
       setSavingEdit(false);
     }
@@ -305,23 +275,21 @@ export default function AdminOpportunitiesPage() {
     }
 
     try {
-      const { error } = await supabase.from("opportunities").insert({
+      await api.post("/opportunities", {
         ...newForm,
-        organization: newForm.provider,
+        company: newForm.provider,
         type: newForm.category || "Scholarships",
-        apply_url: newForm.application_url,
-        amount_or_stipend: newForm.award_amount,
-        last_verified_at: newForm.verification_status === "VERIFIED" ? new Date().toISOString() : null,
-        verified_by: newForm.verification_status === "VERIFIED" ? user?.id : null,
-        updated_at: new Date().toISOString(),
+        link: newForm.application_url,
+        stipend: newForm.award_amount,
+        verified: newForm.verification_status === "VERIFIED",
+        last_verified_at: newForm.verification_status === "VERIFIED" ? new Date().toISOString() : undefined,
       });
 
-      if (error) throw error;
       toast.success("Opportunity created successfully.");
       setNewModalOpen(false);
       fetchOpportunities();
     } catch (err: any) {
-      toast.error("Failed to create: " + err.message);
+      toast.error("Failed to create: " + (err.message || "Unknown error"));
     }
   };
 

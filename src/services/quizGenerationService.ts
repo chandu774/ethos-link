@@ -5,7 +5,7 @@
  * Prevents cross-topic leakage (e.g. Normalization will NEVER generate Transactions/Deadlocks).
  * Performs deterministic validation before questions are reviewed by teachers.
  */
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 
 export interface QuestionDraft {
   id?: string;
@@ -766,67 +766,42 @@ export async function generateAndValidateQuiz(
   const hasExplicitConcepts = Array.isArray(concepts) && concepts.length > 0;
   const targetConcepts = hasExplicitConcepts ? concepts : [];
 
-  const QUIZ_GEN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/quiz-generate`;
-
   const validatedQuestions: QuestionDraft[] = [];
   const seenStems = new Set<string>();
   const rejectedQuestions: { question: string; reason: string }[] = [];
   let totalRejectedCount = 0;
 
-  // Helper: call the edge function and get raw candidates
+  // Helper: call the backend endpoint and get raw candidates
   const callGenerateEndpoint = async (count: number, prevRejections: typeof rejectedQuestions): Promise<any[]> => {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token =
-        sessionData?.session?.access_token ||
-        import.meta.env.VITE_SUPABASE_ANON_KEY ||
-        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-        "";
-      const anonKey =
-        import.meta.env.VITE_SUPABASE_ANON_KEY ||
-        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-        "";
+      console.log(`[quizGenerationService] Calling /ai/quiz-generate for Subject="${subject}", Topic="${topic}", Count=${count}`);
 
-      console.log(`[quizGenerationService] Calling ${QUIZ_GEN_URL} for Subject="${subject}", Topic="${topic}", Count=${count}`);
-
-      const resp = await fetch(QUIZ_GEN_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: anonKey,
-        },
-        body: JSON.stringify({
-          subject,
-          topic,
-          concepts: targetConcepts,
-          difficulty,
-          questionCount: count,
-          forbiddenKeywords: boundary?.forbiddenKeywords || [],
-          previousRejections: prevRejections,
-        }),
+      const data = await api.post<any>("/ai/quiz-generate", {
+        subject,
+        topic,
+        concepts: targetConcepts,
+        difficulty,
+        questionCount: count,
+        forbiddenKeywords: boundary?.forbiddenKeywords || [],
+        previousRejections: prevRejections,
       });
 
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({ error: `HTTP status ${resp.status}` }));
-        console.error(`[quizGenerationService] Edge function HTTP ${resp.status}:`, errBody);
-        throw new Error(errBody.error || `Edge function HTTP ${resp.status}`);
+      if (!data) {
+        throw new Error("No response from AI generation service");
       }
 
-      const data = await resp.json();
-      
       if (data.error) {
-        console.error(`[quizGenerationService] Edge function returned error:`, data.error);
+        console.error(`[quizGenerationService] AI generation returned error:`, data.error);
         throw new Error(data.error);
       }
 
-      const raw = data.questions;
+      const raw = Array.isArray(data) ? data : data.questions;
       if (!Array.isArray(raw)) {
         console.error("[quizGenerationService] Response questions is not an array:", JSON.stringify(data).slice(0, 200));
-        throw new Error("Edge function returned non-array questions");
+        throw new Error("Backend returned non-array questions");
       }
 
-      console.log(`[quizGenerationService] Edge function returned ${raw.length} candidates (Provider: ${data.provider || "Gemini"}, Model: ${data.model || "flash-lite"})`);
+      console.log(`[quizGenerationService] Backend returned ${raw.length} candidates (Provider: ${data.provider || "Gemini"})`);
       return raw;
     } catch (err) {
       console.error("[quizGenerationService] Generation request failed:", err);

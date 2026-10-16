@@ -37,7 +37,7 @@ import {
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface ClassroomItem {
   id: string;
@@ -78,45 +78,8 @@ export default function AdminClassroomsPage() {
   const fetchClassrooms = async () => {
     setLoading(true);
     try {
-      const { data: classData, error: classError } = await supabase
-        .from("classrooms")
-        .select(`
-          id,
-          name,
-          course,
-          branch,
-          year,
-          section,
-          academic_year,
-          created_at
-        `)
-        .order("created_at", { ascending: false });
-
-      if (classError) throw classError;
-
-      // Fetch student and faculty counts
-      const [membersRes, teachingRes] = await Promise.all([
-        supabase.from("classroom_members").select("classroom_id"),
-        supabase.from("teaching_assignments").select("classroom_id"),
-      ]);
-
-      const studentCounts: Record<string, number> = {};
-      (membersRes.data || []).forEach((m: any) => {
-        studentCounts[m.classroom_id] = (studentCounts[m.classroom_id] || 0) + 1;
-      });
-
-      const facultyCounts: Record<string, number> = {};
-      (teachingRes.data || []).forEach((t: any) => {
-        facultyCounts[t.classroom_id] = (facultyCounts[t.classroom_id] || 0) + 1;
-      });
-
-      const enriched = (classData || []).map((c: any) => ({
-        ...c,
-        student_count: studentCounts[c.id] || 0,
-        faculty_count: facultyCounts[c.id] || 0,
-      }));
-
-      setClassrooms(enriched);
+      const data = await api.get<ClassroomItem[]>("/classrooms");
+      setClassrooms(data || []);
     } catch (err: any) {
       console.error("Failed to load classrooms:", err);
       toast.error("Failed to load classrooms: " + (err.message || "Unknown error"));
@@ -138,7 +101,7 @@ export default function AdminClassroomsPage() {
 
     setCreateLoading(true);
     try {
-      const { error } = await supabase.from("classrooms").insert({
+      await api.post("/classrooms", {
         name: name.trim(),
         course: course.trim(),
         branch: branch.trim().toUpperCase(),
@@ -146,13 +109,6 @@ export default function AdminClassroomsPage() {
         section: section.trim().toUpperCase(),
         academic_year: academicYear.trim() || "2026-27",
       });
-
-      if (error) {
-        if (error.code === "23505") {
-          throw new Error(`Classroom "${name.trim()}" already exists.`);
-        }
-        throw error;
-      }
 
       toast.success(`Classroom "${name}" created successfully!`);
       setOpenCreate(false);
@@ -170,8 +126,7 @@ export default function AdminClassroomsPage() {
     }
 
     try {
-      const { error } = await supabase.from("classrooms").delete().eq("id", id);
-      if (error) throw error;
+      await api.delete(`/classrooms/${id}`);
       toast.success(`Classroom "${className}" deleted.`);
       fetchClassrooms();
     } catch (err: any) {

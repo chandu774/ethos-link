@@ -25,8 +25,7 @@ import {
   useApproveCommunityRequest,
   useMyCommunityRequests,
   useRejectCommunityRequest,
-} from "@/hooks/useCommunityRequests";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { uploadAvatarFile } from "@/lib/storage";
 import { toast } from "sonner";
@@ -105,11 +104,9 @@ export default function Groups() {
         pathPrefix: selectedCommunity,
         file,
       });
-      const { error } = await supabase
-        .from("communities")
-        .update({ avatar_url: publicUrl })
-        .eq("id", selectedCommunity);
-      if (error) throw error;
+      await api.patch(`/chat/communities/${selectedCommunity}`, {
+        avatar_url: publicUrl,
+      });
       queryClient.invalidateQueries({ queryKey: ["communities"] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to upload community photo";
@@ -144,40 +141,6 @@ export default function Groups() {
 
     setIsSubmittingCommunity(true);
     try {
-      const { data: nameCheck } = await supabase
-        .from("communities")
-        .select("id")
-        .ilike("name", name)
-        .limit(1);
-
-      if (nameCheck && nameCheck.length > 0) {
-        toast.error("A community with this name already exists.");
-        return;
-      }
-
-      const { data: pendingByUser } = await supabase
-        .from("community_create_requests")
-        .select("id")
-        .eq("user_id", profile.id)
-        .eq("status", "pending")
-        .limit(1);
-
-      if (pendingByUser && pendingByUser.length > 0) {
-        toast.error("You already have a pending community request.");
-        return;
-      }
-
-      const { data: pendingByName } = await supabase
-        .from("community_create_requests")
-        .select("id")
-        .ilike("community_name", name)
-        .eq("status", "pending")
-        .limit(1);
-
-      if (pendingByName && pendingByName.length > 0) {
-        toast.error("A community request with this name is already pending.");
-        return;
-      }
       let avatarUrl: string | null = null;
 
       if (newCommunityImage) {
@@ -192,25 +155,21 @@ export default function Groups() {
         });
       }
 
-      const { error } = await supabase.from("community_create_requests").insert({
-        user_id: profile.id,
-        community_name: name,
+      await api.post("/chat/communities", {
+        name,
         description,
         category: categoryValue,
         avatar_url: avatarUrl,
-        status: "pending",
       });
 
-      if (error) throw error;
-
-      toast.success("Community request submitted for review");
+      toast.success("Community created successfully!");
       setShowStartCommunity(false);
       setNewCommunityName("");
       setNewCommunityCategory("");
       setNewCommunityDescription("");
       setNewCommunityImage(null);
       setNewCommunityImagePreview(null);
-      queryClient.invalidateQueries({ queryKey: ["community-create-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit community request";
       toast.error(message);

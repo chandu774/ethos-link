@@ -35,7 +35,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface StudentMember {
   id: string;
@@ -63,32 +63,8 @@ export default function AdminStudentsPage() {
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      const [studentsRes, membersRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name, email, roll_number, course, branch, year, section, created_at")
-          .eq("role", "student")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("classroom_members")
-          .select("student_id, classroom_id, classroom:classrooms(name)"),
-      ]);
-
-      if (studentsRes.error) throw studentsRes.error;
-
-      const classMap: Record<string, string> = {};
-      (membersRes.data || []).forEach((m: any) => {
-        if (m.classroom?.name) {
-          classMap[m.student_id] = m.classroom.name;
-        }
-      });
-
-      const enriched = (studentsRes.data || []).map((s: any) => ({
-        ...s,
-        classroom_name: classMap[s.id] || "",
-      }));
-
-      setStudents(enriched);
+      const data = await api.get<StudentMember[]>("/users/students");
+      setStudents(data || []);
     } catch (err: any) {
       console.error("Failed to load students:", err);
       toast.error("Failed to load students list");
@@ -112,12 +88,10 @@ export default function AdminStudentsPage() {
 
     setResetLoading(true);
     try {
-      const { error } = await (supabase.rpc as any)("admin_reset_password", {
-        p_user_id: resetStudent.id,
-        p_new_password: resetPasswordValue,
+      await api.post("/users/reset-password", {
+        userId: resetStudent.id,
+        newPassword: resetPasswordValue,
       });
-
-      if (error) throw error;
 
       toast.success(`Password updated for ${resetStudent.name} (${resetStudent.roll_number})`);
       setResetStudent(null);

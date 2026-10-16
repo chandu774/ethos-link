@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 interface EnrolledStudent {
   id: string;
@@ -75,82 +75,43 @@ export default function FacultyStudentsPage() {
 
     try {
       // 1. Fetch classrooms assigned to this faculty via teaching_assignments
-      const { data: taData, error: taErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          classroom_id,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey(
-            id,
-            name,
-            course,
-            branch,
-            year,
-            section
-          )
-        `)
-        .eq("faculty_id", user.id);
-
-      if (taErr) throw taErr;
+      const taData = await api.get<any[]>("/classrooms/my-assigned");
 
       const uniqueClassroomsMap = new Map<string, { id: string; name: string }>();
       (taData || []).forEach((item: any) => {
-        if (item.classroom) {
-          uniqueClassroomsMap.set(item.classroom.id, {
-            id: item.classroom.id,
-            name: `${item.classroom.name} (${item.classroom.course} - Sec ${item.classroom.section})`,
+        const cls = item.classroom || item;
+        const clsId = item.classroom_id || cls.id || cls._id;
+        if (clsId) {
+          uniqueClassroomsMap.set(clsId, {
+            id: clsId,
+            name: `${cls.name || "Classroom"} (${cls.course || ""} - Sec ${cls.section || ""})`,
           });
         }
       });
       const clsList = Array.from(uniqueClassroomsMap.values());
       setClassrooms(clsList);
 
-      // 2. Fetch classroom members. RLS enforces that faculty only sees members of their assigned classrooms.
-      const { data: membersData, error: mErr } = await supabase
-        .from("classroom_members")
-        .select(`
-          id,
-          joined_at,
-          classroom_id,
-          classroom:classrooms!classroom_members_classroom_id_fkey(
-            id,
-            name,
-            course,
-            branch,
-            year,
-            section
-          ),
-          student:profiles!classroom_members_student_id_fkey(
-            id,
-            name,
-            roll_number,
-            email,
-            course,
-            branch,
-            year,
-            section
-          )
-        `);
+      // 2. Fetch students
+      const studentList = await api.get<any[]>("/users/students");
 
-      if (mErr) throw mErr;
+      const parsed: EnrolledStudent[] = (studentList || []).map((s: any) => ({
+        id: s.id || s._id,
+        name: s.name || "Unnamed Student",
+        roll_number: s.roll_number || "No Roll",
+        email: s.email || null,
+        course: s.course || s.classroom?.course,
+        branch: s.branch || s.classroom?.branch,
+        year: s.year || `${s.classroom?.year || ""}`,
+        section: s.section || s.classroom?.section,
+        classroom_id: s.classroom?._id || s.classroom?.id || "",
+        classroom_name: s.classroom?.name || "Classroom",
+        classroom_info: s.classroom
+          ? `${s.classroom.course || ""} ${s.classroom.branch || ""} Year ${s.classroom.year || ""} Sec ${s.classroom.section || ""}`.trim()
+          : "",
+        joined_at: s.created_at || new Date().toISOString(),
+      }));
 
-      const parsed: EnrolledStudent[] = (membersData || [])
-        .filter((m: any) => m.student)
-        .map((m: any) => ({
-          id: m.student.id,
-          name: m.student.name || "Unnamed Student",
-          roll_number: m.student.roll_number || "No Roll",
-          email: m.student.email || null,
-          course: m.student.course || m.classroom?.course,
-          branch: m.student.branch || m.classroom?.branch,
-          year: m.student.year || `${m.classroom?.year || ""}`,
-          section: m.student.section || m.classroom?.section,
-          classroom_id: m.classroom_id,
-          classroom_name: m.classroom?.name || "Classroom",
-          classroom_info: `${m.classroom?.course || ""} ${m.classroom?.branch || ""} Year ${m.classroom?.year || ""} Sec ${m.classroom?.section || ""}`.trim(),
-          joined_at: m.joined_at,
-        }));
-
-      // Deduplicate in case a student is in multiple views
+      // Deduplicate
       const uniqueStudents = Array.from(
         new Map(parsed.map((s) => [`${s.id}-${s.classroom_id}`, s])).values()
       );
@@ -175,31 +136,9 @@ export default function FacultyStudentsPage() {
     setLoadingStats(true);
 
     try {
-      const [{ data: quizAtts }, { data: asgSubs }] = await Promise.all([
-        supabase
-          .from("quiz_attempts")
-          .select(`
-            id,
-            score,
-            max_score,
-            completed_at,
-            quiz:quizzes(title, topic, subject)
-          `)
-          .eq("user_id", student.id),
-        supabase
-          .from("assignment_submissions")
-          .select(`
-            id,
-            status,
-            marks_obtained,
-            submitted_at,
-            assignment:assignments(title, max_marks, topic, subject)
-          `)
-          .eq("user_id", student.id),
-      ]);
-
-      setStudentQuizzes(quizAtts || []);
-      setStudentAssignments(asgSubs || []);
+      const detail = await api.get<any>(`/users/students/${student.id}/detail`);
+      setStudentQuizzes(detail.quizzes || []);
+      setStudentAssignments(detail.assignments || []);
     } catch (err) {
       console.error("Error fetching student performance:", err);
     } finally {

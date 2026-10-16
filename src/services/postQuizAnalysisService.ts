@@ -6,6 +6,8 @@
  * - Actionable recommended next steps.
  */
 
+import api from "@/lib/apiClient";
+
 export interface QuestionMistake {
   questionId: string;
   question: string;
@@ -115,7 +117,6 @@ export async function generatePostQuizAnalysis(
 
   if (mistakes.length > 0) {
     try {
-      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
       const systemPrompt = `You are Synapse Academic AI Diagnostics.
 You must provide a CONCISE, 2-3 sentence learning analysis based STRICTLY on the student's actual attempt evidence.
 CRITICAL RULES:
@@ -133,47 +134,15 @@ ${conceptBreakdown.map((c) => `- ${c.concept}: ${c.correct}/${c.total} (${c.accu
 Incorrect Question Evidence:
 ${mistakes.map((m, idx) => `Q${idx + 1}: [Concept: ${m.concept}] Question: "${m.question}" -> Student chose: "${m.studentAnswer}" (Incorrect), Correct: "${m.correctAnswer}"`).join("\n")}`;
 
-      const resp = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: `Analyze the student's mistakes:\n${userEvidence}` },
-          ],
-        }),
+      const res = await api.post<any>("/ai/chat", {
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Analyze the student's mistakes:\n${userEvidence}` },
+        ],
       });
 
-      if (resp.ok) {
-        const reader = resp.body?.getReader();
-        if (reader) {
-          const decoder = new TextDecoder();
-          let aiText = "";
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n")) {
-              if (line.startsWith("data: ")) {
-                const jsonStr = line.slice(6).trim();
-                if (jsonStr === "[DONE]") break;
-                try {
-                  const p = JSON.parse(jsonStr);
-                  const content = p.choices?.[0]?.delta?.content;
-                  if (content) aiText += content;
-                } catch {
-                  // ignore
-                }
-              }
-            }
-          }
-          if (aiText.trim().length > 30) {
-            aiExplanation = aiText.trim();
-          }
-        }
+      if (res && res.text && res.text.trim().length > 30) {
+        aiExplanation = res.text.trim();
       }
     } catch (err) {
       console.warn("AI post-quiz analysis fallback trigger:", err);

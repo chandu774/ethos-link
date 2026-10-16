@@ -19,7 +19,7 @@ import {
   Share2,
   HelpCircle,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface RealStudentProfile {
@@ -80,127 +80,18 @@ export default function FacultyStudentDetail() {
     const loadStudentData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch Profile
-        const { data: profData, error: profErr } = await supabase
-          .from("profiles")
-          .select("id, name, roll_number, email, avatar_url")
-          .eq("id", studentId)
-          .maybeSingle();
-
-        if (profErr || !profData) {
+        const data = await api.get<any>(`/users/students/${studentId}/detail`);
+        if (!data || !data.profile) {
           toast.error("Student profile not found.");
           setLoading(false);
           return;
         }
 
-        // 2. Fetch Classroom Membership
-        const { data: memData } = await supabase
-          .from("classroom_members")
-          .select(`
-            classroom_id,
-            classroom:classrooms(name, course_code)
-          `)
-          .eq("student_id", studentId)
-          .maybeSingle();
-
-        const classroomName = (memData?.classroom as any)?.name || "Enrolled Cohort";
-        const courseCode = (memData?.classroom as any)?.course_code || "";
-
-        setProfile({
-          ...profData,
-          classroom_name: classroomName,
-          course_code: courseCode,
-        });
-
-        const classroomId = memData?.classroom_id;
-
-        // 3. Fetch Real Quiz Attempts
-        const { data: attData } = await supabase
-          .from("quiz_attempts")
-          .select(`
-            id,
-            quiz_id,
-            score,
-            max_score,
-            percentage,
-            completed_at,
-            quizzes!quiz_attempts_quiz_id_fkey(title, subject, topic)
-          `)
-          .eq("user_id", studentId)
-          .order("completed_at", { ascending: false });
-
-        const mappedAttempts: RealQuizAttempt[] = (attData || []).map((a: any) => ({
-          id: a.id,
-          quiz_id: a.quiz_id,
-          score: a.score,
-          max_score: a.max_score || 100,
-          percentage:
-            a.percentage !== null && a.percentage !== undefined
-              ? a.percentage
-              : a.max_score > 0
-              ? Math.round((a.score / a.max_score) * 100)
-              : 0,
-          completed_at: a.completed_at,
-          quiz_title: a.quizzes?.title || "Assessment",
-          subject: a.quizzes?.subject || "Subject",
-          topic: a.quizzes?.topic || "Topic",
-        }));
-        setQuizAttempts(mappedAttempts);
-
-        // 4. Fetch Real Concept Mastery
-        const { data: cmData } = await supabase
-          .from("concept_mastery")
-          .select("*")
-          .eq("user_id", studentId)
-          .order("mastery_percentage", { ascending: true });
-
-        const mappedConcepts: RealConceptMastery[] = (cmData || []).map((c: any) => ({
-          concept_name: c.concept_name,
-          subject: c.subject || "General",
-          topic: c.topic || "Core",
-          mastery_percentage: c.mastery_percentage || 0,
-          total_questions: c.total_questions || 0,
-          correct_count: c.correct_count || 0,
-        }));
-        setConceptMastery(mappedConcepts);
-
-        // 5. Fetch Real Attendance
-        const { data: attRecords } = await supabase
-          .from("attendance_records")
-          .select("id, status")
-          .eq("student_id", studentId);
-
-        if (attRecords && attRecords.length > 0) {
-          const present = attRecords.filter((r) => r.status === "present" || r.status === "late").length;
-          const total = attRecords.length;
-          setAttendanceStats({
-            present,
-            total,
-            percentage: Math.round((present / total) * 100),
-          });
-        } else {
-          setAttendanceStats({ present: 0, total: 0, percentage: null });
-        }
-
-        // 6. Fetch Real Assignments
-        const { data: subData } = await supabase
-          .from("assignment_submissions")
-          .select("id, assignment_id")
-          .eq("user_id", studentId);
-
-        let totalClassroomAssignments = 0;
-        if (classroomId) {
-          const { count } = await supabase
-            .from("assignments")
-            .select("id", { count: "exact", head: true })
-            .eq("classroom_id", classroomId);
-          totalClassroomAssignments = count || 0;
-        }
-
-        setAssignmentStats({
-          submitted: (subData || []).length,
-          total: Math.max(totalClassroomAssignments, (subData || []).length),
-        });
+        setProfile(data.profile);
+        setQuizAttempts(data.quizAttempts || []);
+        setConceptMastery(data.conceptMastery || []);
+        setAttendanceStats(data.attendanceStats || { present: 0, total: 0, percentage: null });
+        setAssignmentStats(data.assignmentStats || { submitted: 0, total: 0 });
       } catch (err: any) {
         console.error("Failed to load student detail:", err);
         toast.error("Failed to load student performance data.");

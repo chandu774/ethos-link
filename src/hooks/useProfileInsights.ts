@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/apiClient";
 
 export interface ProfileNoteItem {
   id: string;
@@ -27,38 +27,6 @@ export interface ProfileActivityItem {
   title: string;
   subtitle: string;
   created_at: string;
-}
-
-function getStoragePathFromRef(fileRef: string, bucket: string) {
-  if (!/^https?:\/\//i.test(fileRef)) return fileRef;
-
-  try {
-    const url = new URL(fileRef);
-    const path = decodeURIComponent(url.pathname);
-    const patterns = [
-      `/storage/v1/object/public/${bucket}/`,
-      `/storage/v1/object/sign/${bucket}/`,
-      `/storage/v1/object/authenticated/${bucket}/`,
-      `/object/public/${bucket}/`,
-      `/object/sign/${bucket}/`,
-      `/object/authenticated/${bucket}/`,
-    ];
-
-    for (const pattern of patterns) {
-      const index = path.indexOf(pattern);
-      if (index >= 0) return path.slice(index + pattern.length);
-    }
-  } catch {
-    return fileRef;
-  }
-
-  return fileRef;
-}
-
-async function toSignedNoteUrl(fileRef: string) {
-  const path = getStoragePathFromRef(fileRef, "notes");
-  const { data } = await supabase.storage.from("notes").createSignedUrl(path, 60 * 60);
-  return data?.signedUrl || null;
 }
 
 function dayKey(dateLike: string) {
@@ -113,55 +81,30 @@ export function useProfileInsights() {
         };
       }
 
-      const [notesRes, submissionsRes, membershipsRes] = await Promise.all([
-        supabase
-          .from("notes")
-          .select("id, title, subject, file_url, created_at")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(60),
-        supabase
-          .from("submissions")
-          .select("id, status, submitted_at, created_at, assignment:assignments(title, deadline)")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(60),
-        supabase
-          .from("group_members")
-          .select("id, joined_at, group:groups(name)")
-          .eq("user_id", user.id)
-          .order("joined_at", { ascending: false })
-          .limit(60),
+      const [notesRes, assignmentsRes, groupsRes] = await Promise.all([
+        api.get<any[]>("/notes").catch(() => []),
+        api.get<any[]>("/assignments").catch(() => []),
+        api.get<any[]>("/chat/groups").catch(() => []),
       ]);
 
-      if (notesRes.error) throw notesRes.error;
-      if (submissionsRes.error) throw submissionsRes.error;
-      if (membershipsRes.error) throw membershipsRes.error;
+      const notes: ProfileNoteItem[] = (notesRes || [])
+        .filter((n: any) => (n.user_id?._id || n.user_id) === user.id)
+        .map((n: any) => ({
+          id: n.id || n._id,
+          title: n.title,
+          subject: n.subject,
+          file_url: n.file_url,
+          created_at: n.created_at || new Date().toISOString(),
+          download_url: n.file_url,
+        }));
 
-      const notesWithUrls = await Promise.all(
-        (notesRes.data || []).map(async (note) => ({
-          ...note,
-          download_url: await toSignedNoteUrl(note.file_url),
-        }))
-      );
-
-      const notes: ProfileNoteItem[] = notesWithUrls;
-
-      const assignments: ProfileAssignmentItem[] = (submissionsRes.data || []).map((row: any) => ({
-        id: row.id,
-        status: row.status || "pending",
-        submitted_at: row.submitted_at,
-        created_at: row.created_at,
-        assignment_title: row.assignment?.title || "Assignment",
-        assignment_deadline: row.assignment?.deadline || null,
-      }));
-
-      const groupActivities: ProfileActivityItem[] = (membershipsRes.data || []).map((row: any) => ({
-        id: `group-${row.id}`,
-        type: "group",
-        title: "Joined group",
-        subtitle: row.group?.name || "Study group",
-        created_at: row.joined_at,
+      const assignments: ProfileAssignmentItem[] = (assignmentsRes || []).map((a: any) => ({
+        id: a.id || a._id,
+        status: a.has_submitted ? "submitted" : "pending",
+        submitted_at: a.submission?.submitted_at || null,
+        created_at: a.created_at || new Date().toISOString(),
+        assignment_title: a.title,
+        assignment_deadline: a.deadline || null,
       }));
 
       const noteActivities: ProfileActivityItem[] = notes.map((note) => ({
@@ -172,12 +115,20 @@ export function useProfileInsights() {
         created_at: note.created_at,
       }));
 
-      const assignmentActivities: ProfileActivityItem[] = assignments.map((assignment) => ({
-        id: `assignment-${assignment.id}`,
+      const assignmentActivities: ProfileActivityItem[] = assignments.map((asgn) => ({
+        id: `assignment-${asgn.id}`,
         type: "assignment",
-        title: assignment.status === "submitted" ? "Submitted assignment" : "Updated assignment",
-        subtitle: assignment.assignment_title,
-        created_at: assignment.submitted_at || assignment.created_at,
+        title: asgn.status === "submitted" ? "Submitted assignment" : "Coursework assigned",
+        subtitle: asgn.assignment_title,
+        created_at: asgn.submitted_at || asgn.created_at,
+      }));
+
+      const groupActivities: ProfileActivityItem[] = (groupsRes || []).map((g: any) => ({
+        id: `group-${g.id || g._id}`,
+        type: "group",
+        title: "Joined group",
+        subtitle: g.name || "Study group",
+        created_at: g.created_at || new Date().toISOString(),
       }));
 
       const activities = [...noteActivities, ...assignmentActivities, ...groupActivities].sort(
@@ -187,7 +138,7 @@ export function useProfileInsights() {
       const stats = {
         notesUploaded: notes.length,
         assignmentsSubmitted: assignments.filter((item) => item.status === "submitted").length,
-        groupsJoined: membershipsRes.data?.length || 0,
+        groupsJoined: groupsRes?.length || 0,
         activityStreak: computeStreak(activities.map((item) => item.created_at)),
       };
 

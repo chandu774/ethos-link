@@ -34,7 +34,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 export interface VerifiedOpportunity {
@@ -112,32 +112,24 @@ export default function OpportunitiesPage() {
     setLoading(true);
     try {
       // 1. Only fetch VERIFIED opportunities (Real source-based data)
-      const { data: oppData, error: oppErr } = await supabase
-        .from("opportunities")
-        .select("*")
-        .eq("verification_status", "VERIFIED")
-        .order("created_at", { ascending: false });
-
-      if (oppErr) throw oppErr;
-      const verifiedList = (oppData as VerifiedOpportunity[]) || [];
+      const oppData = await api.get<any[]>("/opportunities?verifiedOnly=true");
+      const verifiedList = (oppData || []).map((o: any) => ({
+        ...o,
+        id: o.id || o._id,
+      })) as VerifiedOpportunity[];
       setOpportunities(verifiedList);
 
       // 2. Fetch student's saved tracker records
       if (user) {
-        const { data: savedData, error: savedErr } = await supabase
-          .from("student_saved_opportunities")
-          .select("*")
-          .eq("student_id", user.id);
-
-        if (savedErr) throw savedErr;
-
-        const records = (savedData as any[]) || [];
-        // Attach the corresponding opportunity object
-        const hydrated: StudentSavedRecord[] = records.map((rec) => ({
+        const savedData = await api.get<any[]>("/opportunities/saved");
+        const records = (savedData || []).map((rec: any) => ({
           ...rec,
-          opportunity: verifiedList.find((o) => o.id === rec.opportunity_id),
+          id: rec.id || rec._id,
+          opportunity: rec.opportunity
+            ? { ...rec.opportunity, id: rec.opportunity.id || rec.opportunity._id }
+            : verifiedList.find((o) => o.id === (rec.opportunity_id?.id || rec.opportunity_id)),
         }));
-        setSavedRecords(hydrated);
+        setSavedRecords(records);
       }
     } catch (err: any) {
       console.error("Error loading opportunities:", err);
@@ -240,33 +232,15 @@ export default function OpportunitiesPage() {
     setUpdatingTracker(true);
 
     try {
-      if (existingRecordForTarget) {
-        // Update
-        const { error } = await supabase
-          .from("student_saved_opportunities")
-          .update({
-            status: trackerStatus,
-            notes: trackerNotes.trim() || null,
-            applied_date: trackerAppliedDate ? new Date(trackerAppliedDate).toISOString() : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingRecordForTarget.id);
+      await api.post(`/opportunities/saved/${savingTargetOpp.id}`, {
+        status: trackerStatus,
+        notes: trackerNotes.trim() || undefined,
+        applied_date: trackerAppliedDate ? new Date(trackerAppliedDate).toISOString() : undefined,
+      });
 
-        if (error) throw error;
+      if (existingRecordForTarget) {
         toast.success(`Application status updated to '${trackerStatus}'.`);
       } else {
-        // Insert
-        const { error } = await supabase
-          .from("student_saved_opportunities")
-          .insert({
-            student_id: user.id,
-            opportunity_id: savingTargetOpp.id,
-            status: trackerStatus,
-            notes: trackerNotes.trim() || null,
-            applied_date: trackerAppliedDate ? new Date(trackerAppliedDate).toISOString() : null,
-          });
-
-        if (error) throw error;
         toast.success(`'${savingTargetOpp.title}' saved to your Application Tracker!`);
       }
 
@@ -283,12 +257,7 @@ export default function OpportunitiesPage() {
   // Delete saved record
   const handleDeleteTracker = async (recordId: string) => {
     try {
-      const { error } = await supabase
-        .from("student_saved_opportunities")
-        .delete()
-        .eq("id", recordId);
-
-      if (error) throw error;
+      await api.delete(`/opportunities/saved/${recordId}`);
       toast.info("Opportunity removed from your saved list.");
       setSavedRecords((prev) => prev.filter((r) => r.id !== recordId));
       setSaveModalOpen(false);

@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSynapse } from "@/hooks/useSynapse";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface RealAssignment {
@@ -44,6 +44,7 @@ interface RealAssignment {
   description: string | null;
   deadline: string;
   topic: string | null;
+  subject?: string | null;
   max_marks: number | null;
   estimated_effort: string | null;
   attachment_url: string | null;
@@ -112,70 +113,19 @@ export default function FacultyAssignmentsPage() {
     setLoading(true);
     try {
       // 1. Fetch faculty's teaching assignments
-      const { data: taData } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          subject_name,
-          subject_code,
-          classroom_id,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey(
-            name,
-            course,
-            branch,
-            year,
-            section
-          )
-        `)
-        .eq("faculty_id", user.id);
-
-      const cohorts = (taData as any[]) || [];
-      setTeachingAssignments(cohorts);
-      if (cohorts.length > 0 && !selectedCohortId) {
+      const cohorts = await api.get<any[]>("/classrooms/my-assigned");
+      setTeachingAssignments(cohorts || []);
+      if (cohorts && cohorts.length > 0 && !selectedCohortId) {
         setSelectedCohortId(cohorts[0].id);
       }
 
-      const teachingIds = cohorts.map((c) => c.id);
-
       // 2. Fetch assignments scoped to faculty
-      let query = supabase
-        .from("assignments")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const asgData = await api.get<RealAssignment[]>("/assignments");
+      setAssignments(asgData || []);
 
-      if (teachingIds.length > 0) {
-        query = query.or(`created_by.eq.${user.id},teaching_assignment_id.in.(${teachingIds.join(",")})`);
-      } else {
-        query = query.eq("created_by", user.id);
-      }
-
-      const { data: asgData, error: asgError } = await query;
-      if (asgError) throw asgError;
-      setAssignments((asgData as RealAssignment[]) || []);
-
-      // 2. Fetch student submissions
-      const { data: subData, error: subError } = await supabase
-        .from("assignment_submissions")
-        .select(`
-          id,
-          assignment_id,
-          user_id,
-          submission_text,
-          attachment_url,
-          attachment_name,
-          submitted_at,
-          status,
-          marks_obtained,
-          student:user_id (
-            name,
-            roll_number,
-            email
-          )
-        `);
-
-      if (!subError && subData) {
-        setSubmissions(subData as any);
-      }
+      // 3. Fetch student submissions
+      const subData = await api.get<StudentSubmission[]>("/assignments/submissions/all");
+      setSubmissions(subData || []);
     } catch (err: any) {
       console.error("Failed to fetch coursework:", err);
       toast.error("Failed to load assignments from database");
@@ -212,52 +162,30 @@ export default function FacultyAssignmentsPage() {
           return;
         }
 
-        const cleanName = pdfFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const filePath = `${user?.id || "faculty"}/${Date.now()}_${cleanName}`;
+        const formData = new FormData();
+        formData.append("file", pdfFile);
 
-        const { error: uploadError } = await supabase.storage
-          .from("assignment-files")
-          .upload(filePath, pdfFile, { contentType: "application/pdf", upsert: true });
-
-        if (uploadError) {
-          console.error("PDF upload error:", uploadError);
-          toast.error("Failed to upload attached PDF: " + uploadError.message);
-          setCreateLoading(false);
-          return;
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from("assignment-files")
-          .getPublicUrl(filePath);
-
-        attachmentUrl = publicUrl;
+        const uploadRes = await api.upload<{ fileUrl: string; publicUrl: string }>("/storage/upload", formData);
+        attachmentUrl = uploadRes.publicUrl || uploadRes.fileUrl;
         attachmentName = pdfFile.name;
       }
 
       const isoDeadline = new Date(deadlineDate).toISOString();
       const cohort = teachingAssignments.find((c) => c.id === selectedCohortId);
 
-      // Insert into public.assignments
-      const { data: createdAsg, error: insertError } = await supabase
-        .from("assignments")
-        .insert({
-          title: title.trim(),
-          description: description.trim() || null,
-          deadline: isoDeadline,
-          max_marks: Number(maxMarks) || 20,
-          topic: topic.trim() || cohort?.subject_name || "Coursework",
-          subject: cohort?.subject_name || null,
-          teaching_assignment_id: cohort?.id || null,
-          classroom_id: cohort?.classroom_id || null,
-          estimated_effort: estimatedEffort,
-          attachment_url: attachmentUrl,
-          attachment_name: attachmentName,
-          created_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
+      await api.post("/assignments", {
+        title: title.trim(),
+        description: description.trim() || null,
+        deadline: isoDeadline,
+        max_marks: Number(maxMarks) || 20,
+        topic: topic.trim() || cohort?.subject_name || "Coursework",
+        subject: cohort?.subject_name || null,
+        teaching_assignment_id: cohort?.id || null,
+        classroom_id: cohort?.classroom_id || null,
+        estimated_effort: estimatedEffort,
+        attachment_url: attachmentUrl,
+        attachment_name: attachmentName,
+      });
 
       // Also trigger reactive core update so student in-memory task listeners update instantly
       synapse.createTeacherAssignment(
@@ -302,12 +230,7 @@ export default function FacultyAssignmentsPage() {
     setEditLoading(true);
     try {
       const isoDeadline = new Date(newDeadlineDate).toISOString();
-      const { error } = await supabase
-        .from("assignments")
-        .update({ deadline: isoDeadline, updated_at: new Date().toISOString() })
-        .eq("id", selectedAssignment.id);
-
-      if (error) throw error;
+      await api.patch(`/assignments/${selectedAssignment.id}`, { deadline: isoDeadline });
 
       toast.success("Deadline updated! Student tasks synchronized in real-time.");
       setEditDeadlineOpen(false);
@@ -326,13 +249,7 @@ export default function FacultyAssignmentsPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from("assignments")
-        .delete()
-        .eq("id", assignmentId);
-
-      if (error) throw error;
-
+      await api.delete(`/assignments/${assignmentId}`);
       toast.success(`Assignment '${asgTitle}' deleted.`);
       fetchAssignmentsAndSubmissions();
     } catch (err: any) {

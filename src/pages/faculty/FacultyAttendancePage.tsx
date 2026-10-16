@@ -36,11 +36,12 @@ import {
   Check,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface TeachingCohort {
   id: string;
+  assignment_id?: string;
   subject_name: string;
   subject_code: string | null;
   classroom_id: string;
@@ -107,29 +108,25 @@ export default function FacultyAttendancePage() {
     if (!user) return;
     setLoadingCohorts(true);
     try {
-      const { data: taData, error } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          subject_name,
-          subject_code,
-          classroom_id,
-          classroom:classrooms!teaching_assignments_classroom_id_fkey (
-            name,
-            course,
-            branch,
-            year,
-            section
-          )
-        `)
-        .eq("faculty_id", user.id);
+      const cohorts = await api.get<any[]>("/classrooms/my-assigned");
+      const mappedCohorts: TeachingCohort[] = (cohorts || []).map((c: any) => ({
+        id: c.assignment_id || c.id,
+        assignment_id: c.assignment_id || c.id,
+        subject_name: c.subject_name,
+        subject_code: c.subject_code,
+        classroom_id: c.classroom_id || c.id,
+        classroom: {
+          name: c.classroom_name || c.name,
+          course: c.course,
+          branch: c.branch,
+          year: c.year,
+          section: c.section,
+        },
+      }));
 
-      if (error) throw error;
-
-      const cohorts = (taData as any[]) || [];
-      setTeachingCohorts(cohorts);
-      if (cohorts.length > 0 && !selectedCohortId) {
-        setSelectedCohortId(cohorts[0].id);
+      setTeachingCohorts(mappedCohorts);
+      if (mappedCohorts.length > 0 && !selectedCohortId) {
+        setSelectedCohortId(mappedCohorts[0].id);
       }
     } catch (err: any) {
       console.error("Error loading teaching assignments:", err);
@@ -157,50 +154,21 @@ export default function FacultyAttendancePage() {
     setLoadingStudents(true);
     try {
       // A. Fetch roster members
-      const { data: members, error: membersErr } = await supabase
-        .from("classroom_members")
-        .select(`
-          student:profiles!classroom_members_student_id_fkey (
-            id,
-            name,
-            roll_number
-          )
-        `)
-        .eq("classroom_id", cohort.classroom_id);
-
-      if (membersErr) throw membersErr;
-
-      const roster: { id: string; name: string; roll_number: string }[] = (members || [])
+      const classDetail = await api.get<any>(`/classrooms/${cohort.classroom_id}`);
+      const roster: { id: string; name: string; roll_number: string }[] = (classDetail?.members || [])
         .filter((m: any) => m.student)
         .map((m: any) => ({
-          id: m.student.id,
+          id: m.student.id || m.student._id,
           name: m.student.name || "Student",
           roll_number: m.student.roll_number || "—",
         }))
-        .sort((a, b) => a.roll_number.localeCompare(b.roll_number, undefined, { numeric: true }));
+        .sort((a: any, b: any) => a.roll_number.localeCompare(b.roll_number, undefined, { numeric: true }));
 
       // B. Check if attendance was already recorded for this cohort & date
-      const { data: existingSession, error: sessErr } = await supabase
-        .from("class_sessions")
-        .select(`
-          id,
-          topic,
-          teaching_notes,
-          attendance_records (
-            student_id,
-            status
-          )
-        `)
-        .eq("teaching_assignment_id", cohortId)
-        .eq("date", dateStr)
-        .maybeSingle();
-
-      if (sessErr) {
-        console.error("Error checking existing session:", sessErr);
-      }
+      const sessions = await api.get<any[]>(`/attendance/sessions?teachingAssignmentId=${cohortId}&date=${dateStr}`);
+      const existingSession = sessions && sessions.length > 0 ? sessions[0] : null;
 
       if (existingSession) {
-        // Load saved state
         setExistingSessionId(existingSession.id);
         setSessionTopic(existingSession.topic || "");
         setTeachingNotes(existingSession.teaching_notes || "");
@@ -217,7 +185,6 @@ export default function FacultyAttendancePage() {
           }))
         );
       } else {
-        // Brand new session: all students default to PRESENT
         setExistingSessionId(null);
         setSessionTopic("");
         setTeachingNotes("");
@@ -242,46 +209,8 @@ export default function FacultyAttendancePage() {
     setLoadingHistory(true);
 
     try {
-      const { data: sessData, error: sessErr } = await supabase
-        .from("class_sessions")
-        .select(`
-          id,
-          date,
-          topic,
-          teaching_notes,
-          attendance_records (
-            status,
-            student:profiles (name, roll_number)
-          )
-        `)
-        .eq("teaching_assignment_id", cohortId)
-        .order("date", { ascending: false });
-
-      if (sessErr) throw sessErr;
-
-      const parsedHistory: ClassSessionItem[] = (sessData || []).map((s: any) => {
-        const records = s.attendance_records || [];
-        const presents = records
-          .filter((r: any) => r.status === "present")
-          .map((r: any) => `${r.student?.name} (${r.student?.roll_number})`);
-        const absents = records
-          .filter((r: any) => r.status === "absent")
-          .map((r: any) => `${r.student?.name} (${r.student?.roll_number})`);
-
-        return {
-          id: s.id,
-          date: s.date,
-          topic: s.topic,
-          teaching_notes: s.teaching_notes,
-          present_count: presents.length,
-          absent_count: absents.length,
-          total_students: records.length,
-          present_students: presents,
-          absent_students: absents,
-        };
-      });
-
-      setHistorySessions(parsedHistory);
+      const sessions = await api.get<ClassSessionItem[]>(`/attendance/sessions?teachingAssignmentId=${cohortId}`);
+      setHistorySessions(sessions || []);
     } catch (err: any) {
       console.error("Error loading attendance history:", err);
     } finally {
@@ -326,74 +255,27 @@ export default function FacultyAttendancePage() {
 
     setSavingSession(true);
     try {
-      let sessionId = existingSessionId;
+      const cohort = teachingCohorts.find((c) => c.id === selectedCohortId);
+      await api.post("/attendance/record", {
+        session_id: existingSessionId || undefined,
+        teaching_assignment_id: selectedCohortId,
+        classroom_id: cohort?.classroom_id,
+        session_date: sessionDate,
+        topic_covered: sessionTopic.trim(),
+        notes: teachingNotes.trim() || undefined,
+        attendance_data: students.map((st) => ({
+          student_id: st.id,
+          status: st.status,
+        })),
+      });
 
-      if (sessionId) {
-        // Update existing class_session
-        const { error: sessionErr } = await supabase
-          .from("class_sessions")
-          .update({
-            topic: sessionTopic.trim(),
-            teaching_notes: teachingNotes.trim() || null,
-          })
-          .eq("id", sessionId);
-
-        if (sessionErr) throw sessionErr;
-
-        // Clean up previous records to prevent duplicates
-        const { error: delErr } = await supabase
-          .from("attendance_records")
-          .delete()
-          .eq("session_id", sessionId);
-
-        if (delErr) throw delErr;
-      } else {
-        // Insert new class_session
-        const { data: sessionData, error: sessionErr } = await supabase
-          .from("class_sessions")
-          .insert({
-            teaching_assignment_id: selectedCohortId,
-            date: sessionDate,
-            topic: sessionTopic.trim(),
-            teaching_notes: teachingNotes.trim() || null,
-            created_by: user?.id,
-          })
-          .select()
-          .single();
-
-        if (sessionErr) throw sessionErr;
-        sessionId = sessionData.id;
-        setExistingSessionId(sessionId);
-      }
-
-      // Sync topic into session_concepts for analytics and recommendations
-      if (sessionTopic.trim()) {
-        await supabase.from("session_concepts").delete().eq("session_id", sessionId);
-        await supabase
-          .from("session_concepts")
-          .insert([{ session_id: sessionId, concept_name: sessionTopic.trim() }]);
-      }
-
-      // Insert fresh attendance_records
-      const recordsToInsert = students.map((st) => ({
-        session_id: sessionId,
-        student_id: st.id,
-        status: st.status,
-      }));
-
-      const { error: attErr } = await supabase
-        .from("attendance_records")
-        .insert(recordsToInsert);
-
-      if (attErr) throw attErr;
-
-      const presentCount = students.filter((s) => s.status === "present").length;
-      const absentCount = students.filter((s) => s.status === "absent").length;
+      const presentCnt = students.filter((s) => s.status === "present").length;
+      const absentCnt = students.filter((s) => s.status === "absent").length;
 
       toast.success(
         existingSessionId
-          ? `Attendance updated successfully (${presentCount} Present, ${absentCount} Absent)`
-          : `Attendance posted successfully (${presentCount} Present, ${absentCount} Absent)`
+          ? `Attendance updated successfully (${presentCnt} Present, ${absentCnt} Absent)`
+          : `Attendance posted successfully (${presentCnt} Present, ${absentCnt} Absent)`
       );
 
       // Refresh history records

@@ -16,7 +16,7 @@ import {
   Activity,
   CheckCircle2,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -32,33 +32,21 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function loadMetrics() {
       try {
-        const [
-          { count: facultyCount },
-          { count: studentCount },
-          { count: classroomCount },
-          { count: teachingCount },
-          { data: facultyList },
-        ] = await Promise.all([
-          supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "faculty"),
-          supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
-          supabase.from("classrooms").select("id", { count: "exact", head: true }),
-          supabase.from("teaching_assignments").select("id", { count: "exact", head: true }),
-          supabase
-            .from("profiles")
-            .select("id, name, email, faculty_id, department, designation, created_at")
-            .eq("role", "faculty")
-            .order("created_at", { ascending: false })
-            .limit(5),
+        const [facList, stList, clsList, teachList] = await Promise.all([
+          api.get<any[]>("/users/faculty"),
+          api.get<any[]>("/users/students"),
+          api.get<any[]>("/classrooms"),
+          api.get<any[]>("/classrooms/teaching-assignments/all"),
         ]);
 
         setStats({
-          facultyCount: facultyCount ?? 0,
-          studentCount: studentCount ?? 0,
-          classroomCount: classroomCount ?? 0,
-          teachingCount: teachingCount ?? 0,
+          facultyCount: facList?.length || 0,
+          studentCount: stList?.length || 0,
+          classroomCount: clsList?.length || 0,
+          teachingCount: teachList?.length || 0,
           departments: ["Computer Science & Engineering", "Information Technology", "Electronics & Comm."],
         });
-        setRecentFaculty(facultyList || []);
+        setRecentFaculty((facList || []).slice(0, 5));
       } catch (err) {
         console.error("Failed to load admin stats:", err);
       } finally {

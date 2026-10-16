@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSynapse } from "@/hooks/useSynapse";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -81,17 +81,11 @@ export default function TasksPage() {
     queryKey: ["student-tasks", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*")
-        .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching tasks:", error);
-        throw error;
-      }
-      return (data || []) as DBTask[];
+      const data = await api.get<any[]>("/tasks");
+      return (data || []).map((t: any) => ({
+        ...t,
+        id: t.id || t._id,
+      })) as DBTask[];
     },
     enabled: !!user?.id,
   });
@@ -110,19 +104,14 @@ export default function TasksPage() {
     try {
       const deadlineIso = newDeadline ? new Date(newDeadline).toISOString() : null;
 
-      const { error } = await supabase.from("tasks").insert({
+      await api.post("/tasks", {
         title: newTitle.trim(),
         subject: newSubject.trim() || "Self Study",
-        description: newDescription.trim() || null,
+        description: newDescription.trim() || undefined,
         deadline: deadlineIso,
         priority: newPriority,
         status: "todo",
-        is_official: false,
-        created_by: user.id,
-        assigned_to: user.id,
       });
-
-      if (error) throw error;
 
       toast.success("Personal task created successfully");
       setNewTitle("");
@@ -139,15 +128,9 @@ export default function TasksPage() {
 
   const handleStatusChange = async (taskId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
-        .from("tasks")
-        .update({
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", taskId);
-
-      if (error) throw error;
+      await api.patch(`/tasks/${taskId}`, {
+        status: newStatus,
+      });
 
       refetch();
       if (newStatus === "completed") {
@@ -162,8 +145,7 @@ export default function TasksPage() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-      if (error) throw error;
+      await api.delete(`/tasks/${taskId}`);
       toast.success("Task removed");
       refetch();
     } catch (err: any) {

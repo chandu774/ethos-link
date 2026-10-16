@@ -73,7 +73,7 @@ export default function AdminLogin() {
           </p>
         </div>
 
-        {/* Real Supabase Auth Card */}
+        {/* Real MERN Auth Card */}
         <Card className="border-slate-800 bg-slate-900/90 shadow-2xl">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-white">Administrator Sign In</CardTitle>

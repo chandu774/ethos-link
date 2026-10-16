@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Brain, Eye, EyeOff, Lock, UserCheck, Loader2, ArrowRight, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -16,6 +15,7 @@ export default function Auth() {
     updatePassword,
     user,
     role,
+    profile,
     loading: authLoading,
   } = useAuth();
 
@@ -40,7 +40,7 @@ export default function Auth() {
     }
   }, [user, role, authLoading, navigate]);
 
-  // Detect Supabase recovery / reset flow from URL
+  // Detect password reset / recovery flow from URL
   useEffect(() => {
     const hash = window.location.hash ?? "";
     const search = window.location.search ?? "";
@@ -89,13 +89,7 @@ export default function Auth() {
       }
 
       // Student role: check must_change_password
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("must_change_password")
-        .eq("email", trimmedId.includes("@") ? trimmedId.toLowerCase() : `${trimmedId.toLowerCase()}@student.synapse.local`)
-        .maybeSingle();
-
-      if (prof?.must_change_password) {
+      if (profile?.must_change_password) {
         navigate("/student/change-password", { replace: true });
       } else {
         toast.success("Welcome back to Synapse!");

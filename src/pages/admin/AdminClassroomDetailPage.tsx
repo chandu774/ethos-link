@@ -45,7 +45,7 @@ import {
   KeyRound,
   Sparkles,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 interface ClassroomRecord {
@@ -99,130 +99,33 @@ export default function AdminClassroomDetailPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch Classroom Metadata
-      const { data: clsData, error: clsErr } = await supabase
-        .from("classrooms")
-        .select("*")
-        .eq("id", classroomId)
-        .single();
+      const data = await api.get<any>(`/classrooms/${classroomId}`);
+      setClassroom(data.classroom);
+      setStudents(data.members || []);
+      setTeachingAssignments(data.teaching_assignments || []);
+      setAssignments(data.assignments || []);
+      setQuizzes(data.quizzes || []);
+      setSessions(data.sessions || []);
 
-      if (clsErr) throw clsErr;
-      setClassroom(clsData);
+      const [allSts, facData] = await Promise.all([
+        api.get<any[]>("/users/students"),
+        api.get<any[]>("/users/faculty"),
+      ]);
 
-      // 2. Fetch Enrolled Students in this classroom
-      const { data: membersData, error: mErr } = await supabase
-        .from("classroom_members")
-        .select(`
-          id,
-          joined_at,
-          student:profiles!classroom_members_student_id_fkey (
-            id,
-            name,
-            roll_number,
-            email,
-            created_at
-          )
-        `)
-        .eq("classroom_id", classroomId);
-
-      if (!mErr && membersData) {
-        setStudents(membersData.filter((m: any) => m.student));
-      }
-
-      // Fetch all students to determine who is available to enroll
-      const { data: allSts } = await supabase
-        .from("profiles")
-        .select("id, name, roll_number, email, branch")
-        .eq("role", "student")
-        .order("name", { ascending: true });
-
-      if (allSts && membersData) {
-        const enrolledIds = new Set(membersData.map((m: any) => m.student?.id).filter(Boolean));
-        const unenrolled = allSts.filter((s: any) => !enrolledIds.has(s.id));
+      if (allSts && data.members) {
+        const enrolledIds = new Set(data.members.map((m: any) => m.student?._id || m.student?.id).filter(Boolean));
+        const unenrolled = allSts.filter((s: any) => !enrolledIds.has(s.id) && !enrolledIds.has(s._id));
         setAvailableExistingStudents(unenrolled);
         if (unenrolled.length > 0) {
-          setSelectedExistingStudentId(unenrolled[0].id);
+          setSelectedExistingStudentId(unenrolled[0].id || unenrolled[0]._id);
         }
       }
-
-      // 3. Fetch Teaching Assignments in this classroom
-      const { data: taData, error: taErr } = await supabase
-        .from("teaching_assignments")
-        .select(`
-          id,
-          subject_name,
-          subject_code,
-          faculty_id,
-          faculty:profiles!teaching_assignments_faculty_id_fkey (
-            id,
-            name,
-            email,
-            faculty_id,
-            department
-          )
-        `)
-        .eq("classroom_id", classroomId);
-
-      if (!taErr && taData) {
-        setTeachingAssignments(taData);
-      }
-
-      // 4. Fetch Available Faculty list for assigning
-      const { data: facData } = await supabase
-        .from("profiles")
-        .select("id, name, faculty_id, department, email")
-        .eq("role", "faculty")
-        .order("name", { ascending: true });
 
       if (facData) {
         setFacultyList(facData);
         if (facData.length > 0 && !selectedFacultyId) {
-          setSelectedFacultyId(facData[0].id);
+          setSelectedFacultyId(facData[0].id || facData[0]._id);
         }
-      }
-
-      // 5. Fetch Assignments for this classroom
-      const { data: asgData } = await supabase
-        .from("assignments")
-        .select("id, title, topic, subject, deadline, max_marks")
-        .eq("classroom_id", classroomId)
-        .order("created_at", { ascending: false });
-
-      if (asgData) {
-        setAssignments(asgData);
-      }
-
-      // 6. Fetch Quizzes for this classroom
-      const { data: qzData } = await supabase
-        .from("quizzes")
-        .select("id, title, topic, subject, difficulty, status, duration_minutes, max_attempts")
-        .eq("classroom_id", classroomId)
-        .order("created_at", { ascending: false });
-
-      if (qzData) {
-        setQuizzes(qzData);
-      }
-
-      // 7. Fetch Class Sessions for this classroom
-      const { data: sessData } = await supabase
-        .from("class_sessions")
-        .select(`
-          id,
-          date,
-          topic,
-          teaching_notes,
-          teaching_assignment:teaching_assignments (
-            subject_name,
-            faculty:profiles(name)
-          )
-        `)
-        .order("date", { ascending: false });
-
-      if (sessData) {
-        // filter sessions belonging to this classroom's teaching assignments
-        const taIds = new Set((taData || []).map((t: any) => t.id));
-        const filteredSess = sessData.filter((s: any) => taIds.has(s.teaching_assignment?.id));
-        setSessions(filteredSess);
       }
     } catch (err: any) {
       console.error("Failed to load classroom detail:", err);
@@ -248,7 +151,7 @@ export default function AdminClassroomDetailPage() {
 
   const openAssignTeacherModal = () => {
     if (facultyList.length > 0 && !selectedFacultyId) {
-      setSelectedFacultyId(facultyList[0].id);
+      setSelectedFacultyId(facultyList[0].id || facultyList[0]._id);
     }
     setSubjectName("");
     setSubjectCode("");
@@ -285,19 +188,17 @@ Login URL: ${window.location.origin}/login`;
 
     setAddStudentLoading(true);
     try {
-      const { data, error } = await supabase.rpc("admin_create_student", {
-        p_name: studentName.trim(),
-        p_roll_number: studentRoll.trim().toUpperCase(),
-        p_password: studentPassword,
-        p_email: null,
-        p_course: classroom?.course || "B.Tech",
-        p_branch: classroom?.branch || "CSE",
-        p_year: `${classroom?.year || 3}`,
-        p_section: classroom?.section || "A",
-        p_classroom_id: classroomId,
+      await api.post("/users", {
+        name: studentName.trim(),
+        roll_number: studentRoll.trim().toUpperCase(),
+        password: studentPassword,
+        role: "student",
+        course: classroom?.course || "B.Tech",
+        branch: classroom?.branch || "CSE",
+        year: `${classroom?.year || 3}`,
+        section: classroom?.section || "A",
+        classroom_id: classroomId,
       });
-
-      if (error) throw error;
 
       toast.success(`Student ${studentName} created and enrolled into ${classroom?.name}!`);
       setCreatedNotice({
@@ -328,18 +229,9 @@ Login URL: ${window.location.origin}/login`;
 
     setEnrollExistingLoading(true);
     try {
-      const { error } = await supabase.from("classroom_members").insert({
-        classroom_id: classroomId,
+      await api.post(`/classrooms/${classroomId}/members`, {
         student_id: selectedExistingStudentId,
-        role: "student",
       });
-
-      if (error) {
-        if (error.code === "23505") {
-          throw new Error("This student is already enrolled in this classroom.");
-        }
-        throw error;
-      }
 
       toast.success("Student successfully enrolled into this classroom cohort!");
       setAddStudentOpen(false);
@@ -362,21 +254,11 @@ Login URL: ${window.location.origin}/login`;
 
     setAssignTeacherLoading(true);
     try {
-      const { error } = await supabase
-        .from("teaching_assignments")
-        .insert({
-          classroom_id: classroomId,
-          faculty_id: selectedFacultyId,
-          subject_name: subjectName.trim(),
-          subject_code: subjectCode.trim() || null,
-        });
-
-      if (error) {
-        if (error.code === "23505") {
-          throw new Error("This teacher is already assigned to this subject code in this classroom cohort.");
-        }
-        throw error;
-      }
+      await api.post(`/classrooms/${classroomId}/teaching-assignments`, {
+        faculty_id: selectedFacultyId,
+        subject_name: subjectName.trim(),
+        subject_code: subjectCode.trim() || undefined,
+      });
 
       toast.success(`Assigned "${subjectName}" to teacher for ${classroom?.name}!`);
       setAssignTeacherOpen(false);
@@ -385,7 +267,7 @@ Login URL: ${window.location.origin}/login`;
       fetchClassroomDetails();
     } catch (err: any) {
       console.error("Error assigning teacher:", err);
-      toast.error("Failed to assign teacher: " + err.message);
+      toast.error("Failed to assign teacher: " + (err.message || "Unknown error"));
     } finally {
       setAssignTeacherLoading(false);
     }
@@ -396,16 +278,11 @@ Login URL: ${window.location.origin}/login`;
     if (!confirm(`Are you sure you want to unassign ${subj} from this classroom?`)) return;
 
     try {
-      const { error } = await supabase
-        .from("teaching_assignments")
-        .delete()
-        .eq("id", assignmentId);
-
-      if (error) throw error;
+      await api.delete(`/classrooms/teaching-assignments/${assignmentId}`);
       toast.success(`Unassigned ${subj} successfully`);
       fetchClassroomDetails();
     } catch (err: any) {
-      toast.error("Failed to remove assignment: " + err.message);
+      toast.error("Failed to remove assignment: " + (err.message || "Unknown error"));
     }
   };
 
@@ -414,16 +291,11 @@ Login URL: ${window.location.origin}/login`;
     if (!confirm(`Remove ${studentName} from ${classroom?.name}?`)) return;
 
     try {
-      const { error } = await supabase
-        .from("classroom_members")
-        .delete()
-        .eq("id", membershipId);
-
-      if (error) throw error;
+      await api.delete(`/classrooms/${classroomId}/members/${membershipId}`);
       toast.success(`Removed ${studentName} from this classroom`);
       fetchClassroomDetails();
     } catch (err: any) {
-      toast.error("Failed to remove student: " + err.message);
+      toast.error("Failed to remove student: " + (err.message || "Unknown error"));
     }
   };
 
